@@ -62,17 +62,23 @@ npm run preview
   object): type toggle with separate cached rows per type, abnormal-range
   flagging, debounced autosave + manual Save, legacy short-row migration,
   archived read-only view.
+- **Calculators, Lab Reference** (`/charts/calculators`,
+  `/charts/lab-reference`) — thin pages that mount the vanilla-JS
+  `calculators.js`/`labReference.js` modules (ported verbatim from
+  MedIndex, same as the original React pages did) into a container div
+  via `onMount`.
 - Business-logic helpers (`src/lib/helpers/drugChartHelpers.js`,
   `firestoreOffline.js`, `patientAdmissionStatus.js`,
   `intakeOutputHelpers.js`, `avatar.js`, `wardCensus.js`, `wardTransfer.js`,
   `patientParse.js`, `patientCsv.js`, `wardNameMatch.js`,
-  `nursesReportCommon.js`) were ported verbatim — they're
-  framework-agnostic JS, not React-specific.
+  `nursesReportCommon.js`, `calculators.js`, `labReference.js`,
+  `labs-data.js`) were ported verbatim — they're framework-agnostic JS,
+  not React-specific.
 
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): Profile, Admin, Overview, Admission, Calculators, Lab
-Reference, the Nurses Report section, PDF export, push notifications, the
-service worker, and the Capacitor Android wrapper.
+doesn't break): Profile, Admin, Overview, Admission, the Nurses Report
+section, PDF export, push notifications, the service worker, and the
+Capacitor Android wrapper.
 
 **Intentionally deferred:** the Drug Course Chart's patient status-change
 flow (referred / transferred / discharged) — in the original this reads
