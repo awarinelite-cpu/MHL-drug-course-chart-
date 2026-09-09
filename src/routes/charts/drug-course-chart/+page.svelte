@@ -1,0 +1,921 @@
+<script>
+  import { onMount, onDestroy } from "svelte";
+  import { page } from "$app/state";
+  import { goto } from "$app/navigation";
+  import {
+    doc, getDoc, setDoc, serverTimestamp
+  } from "firebase/firestore";
+  import { db } from "$lib/firebase.js";
+  import { authState } from "$lib/stores/auth.svelte.js";
+  import { getDocSafe } from "$lib/helpers/firestoreOffline.js";
+  import Topbar from "$lib/components/Topbar.svelte";
+  import {
+    ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS,
+    actionColor, defaultRow, dueLabelFor, withDrugCompletionChecked, computeRouteFromSno,
+    parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
+    diffFields, autoDurationForFrequency
+  } from "$lib/helpers/drugChartHelpers.js";
+
+  const FIELD_IDS = ["f_admission", "f_discharge", "f_diagnosis"];
+
+  function blankDrugs() { return Array(8).fill(null).map(() => ({ name: "", route: "", frequency: "", action: "", duration: "" })); }
+  function blankChartRows() { return Array(18).fill(null).map(() => defaultRow()); }
+
+  function rowsFromDoc(dataRows) {
+    return (dataRows && dataRows.length)
+      ? dataRows.map(r => Array.isArray(r)
+        ? { date: r[0] || "", sno: r[1] || "", time: r[2] || "", dose: r[3] || "AP", route: r[4] || "", nurse: r[5] || "", remark: r[6] || "", skipped: [] }
+        : { ...r, dose: r.dose || "AP", skipped: Array.isArray(r.skipped) ? r.skipped : [] })
+      : blankChartRows();
+  }
+
+  // --- Query params / patient header (ported from usePatientHeader.js + useChartBack.js) ---
+  const patientId = $derived(page.url.searchParams.get("patient"));
+  const admissionId = $derived(page.url.searchParams.get("admission"));
+  const from = $derived(page.url.searchParams.get("from"));
+  const isArchived = $derived(!!admissionId);
+
+  function chartBackTarget() {
+    if (!patientId) return "/";
+    if (from === "patient" && !admissionId) return "/patient?patient=" + patientId;
+    return "/charts/admission?patient=" + patientId + (admissionId ? "&admission=" + admissionId : "");
+  }
+  function goBack() { goto(chartBackTarget()); }
+
+  let patient = $state(null);
+  $effect(() => {
+    if (!patientId) { goto("/"); return; }
+    getDocSafe(doc(db, "patients", patientId)).then((snap) => {
+      if (!snap.exists()) { goto("/"); return; }
+      patient = { id: snap.id, ...snap.data() };
+    }).catch(() => { /* offline-tolerant: header just stays blank */ });
+  });
+
+  // Device/OS Back always returns to a known route (ported from useBackLock.js)
+  onMount(() => {
+    try { window.history.pushState({ __backGuard: true }, "", window.location.href); } catch (e) { /* ignore */ }
+    const onPopState = () => goto(chartBackTarget(), { replaceState: true });
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  });
+
+  const currentNurseName = $derived(authState.profile?.name || "");
+
+  let loaded = $state(false);
+  let fields = $state({ f_admission: "", f_discharge: "", f_diagnosis: "" });
+  let drugs = $state([]);
+  let drugsEditMode = $state(false);
+  let editingDrugRows = $state({});
+  let chartRows = $state([]);
+  let chartEditMode = $state(false);
+  let editingChartRows = $state({});
+  let verbalOrders = $state([]);
+  let careInstructions = $state([]);
+  let auditLog = $state([]);
+  let saveStatus = $state("—");
+  let now = $state(new Date());
+
+  let chartRefPath = null;
+  let saveTimer = null;
+  let lastAppliedUpdatedAt = null;
+  let drugRowSnapshots = {};
+  let chartRowSnapshots = {};
+
+  let verbalModalOpen = $state(false);
+  let verbalInput = $state("");
+  let editingVerbalIndex = $state(-1);
+  let verbalEditText = $state("");
+
+  let careModalOpen = $state(false);
+  let careInput = $state("");
+  let editingCareIndex = $state(-1);
+  let careEditText = $state("");
+
+  let auditModalOpen = $state(false);
+
+  const seenStorageKey = $derived("chartSeen_" + patientId + (isArchived ? "_" + admissionId : ""));
+  function readSeenCount(suffix) {
+    try {
+      const raw = localStorage.getItem(seenStorageKey + suffix);
+      return raw ? parseInt(raw, 10) || 0 : 0;
+    } catch (e) { return 0; }
+  }
+  let careSeenCount = $state(0);
+  let auditSeenCount = $state(0);
+  const careUnreadCount = $derived(Math.max(0, careInstructions.length - careSeenCount));
+  const auditUnreadCount = $derived(Math.max(0, auditLog.length - auditSeenCount));
+  function markCareSeen() { careSeenCount = careInstructions.length; try { localStorage.setItem(seenStorageKey + "_care", String(careInstructions.length)); } catch (e) {} }
+  function markAuditSeen() { auditSeenCount = auditLog.length; try { localStorage.setItem(seenStorageKey + "_audit", String(auditLog.length)); } catch (e) {} }
+  function openAuditModal() { markAuditSeen(); auditModalOpen = true; }
+
+  let diagModalOpen = $state(false);
+  let diagEditing = $state(false);
+  let diagEditText = $state("");
+
+  let bulkModalOpen = $state(false);
+  let bulkStep = $state(1);
+  let bulkText = $state("");
+  let bulkParseMsg = $state("");
+  let bulkParsed = $state([]);
+
+  let freqModalOpen = $state(false);
+  let freqModalText = $state("");
+  let freqApply = null;
+
+  let snoPickerRow = $state(-1);
+  let snoPickerSelected = $state([]);
+  let snoPickerSkipped = $state({});
+  let snoPickerEditingNum = $state(-1);
+  let snoPickerEditText = $state("");
+  let skipReasonPopup = $state(null);
+
+  function logAudit(text) {
+    auditLog = [...auditLog, { at: new Date().toISOString(), nurse: currentNurseName, text }];
+  }
+
+  // --- Load ---
+  $effect(() => {
+    if (!patientId) return;
+    (async () => {
+      let data = null;
+      if (isArchived) {
+        const admSnap = await getDoc(doc(db, "patients", patientId, "admissions", admissionId));
+        if (admSnap.exists()) data = admSnap.data().drugCourseChart || null;
+      } else {
+        chartRefPath = doc(db, "patients", patientId, "drugCourseChart", "main");
+        const snap = await getDoc(chartRefPath);
+        if (snap.exists()) { data = snap.data(); lastAppliedUpdatedAt = data.updatedAt || null; }
+      }
+
+      if (data) {
+        const nextFields = { f_admission: "", f_discharge: "", f_diagnosis: "" };
+        FIELD_IDS.forEach(id => { if (data[id]) nextFields[id] = data[id]; });
+        fields = { ...fields, ...nextFields };
+
+        const nextDrugs = (data.drugs && data.drugs.length) ? data.drugs : blankDrugs();
+        drugs = nextDrugs;
+
+        let nextRows = rowsFromDoc(data.rows);
+        chartRows = nextRows.map(row => (row.sno && !row.route) ? { ...row, route: computeRouteFromSno(row.sno, nextDrugs) } : row);
+        verbalOrders = data.verbalOrders || [];
+        careInstructions = data.careInstructions || [];
+        auditLog = data.auditLog || [];
+      } else {
+        drugs = blankDrugs();
+        chartRows = blankChartRows();
+        verbalOrders = [];
+        careInstructions = [];
+        auditLog = [];
+      }
+      careSeenCount = readSeenCount("_care");
+      auditSeenCount = readSeenCount("_audit");
+      saveStatus = isArchived ? "Viewing archived chart (read-only)" : "Changes save automatically";
+      loaded = true;
+    })();
+  });
+
+  // Date of Admission defaults to the patient's registered admission date
+  $effect(() => {
+    if (loaded && patient?.admissionDate && !fields.f_admission) {
+      fields = { ...fields, f_admission: patient.admissionDate };
+    }
+  });
+
+  // Due-label ticker + periodic completion re-check
+  onMount(() => {
+    const tick = setInterval(() => { now = new Date(); }, 60 * 1000);
+    return () => clearInterval(tick);
+  });
+
+  $effect(() => {
+    if (!loaded || isArchived) return;
+    const next = withDrugCompletionChecked(drugs, chartRows);
+    if (next !== drugs) { drugs = next; scheduleSave(); }
+  });
+
+  // Cross-device sync polling: every 30s, pull in newer data as long as
+  // nobody's mid-edit and no field is actively focused.
+  onMount(() => {
+    const poll = setInterval(async () => {
+      if (isArchived || !chartRefPath || chartEditMode || drugsEditMode) return;
+      const active = document.activeElement;
+      if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+      try {
+        const snap = await getDoc(chartRefPath);
+        if (!snap.exists()) return;
+        const data = snap.data();
+        const remoteMs = data.updatedAt?.toMillis ? data.updatedAt.toMillis() : 0;
+        const localMs = lastAppliedUpdatedAt?.toMillis ? lastAppliedUpdatedAt.toMillis() : 0;
+        if (remoteMs > localMs) {
+          lastAppliedUpdatedAt = data.updatedAt;
+          const nextFields = { f_admission: "", f_discharge: "", f_diagnosis: "" };
+          FIELD_IDS.forEach(id => { if (data[id] !== undefined) nextFields[id] = data[id]; });
+          fields = { ...fields, ...nextFields };
+          const nextDrugs = (data.drugs && data.drugs.length) ? data.drugs : drugs;
+          let nextRows = rowsFromDoc(data.rows);
+          nextRows = nextRows.map(row => (row.sno && !row.route) ? { ...row, route: computeRouteFromSno(row.sno, nextDrugs) } : row);
+          drugs = nextDrugs;
+          chartRows = nextRows;
+          verbalOrders = data.verbalOrders || [];
+          careInstructions = data.careInstructions || [];
+          auditLog = data.auditLog || [];
+        }
+      } catch (e) { /* offline-tolerant: just skip this poll */ }
+    }, 30000);
+    return () => clearInterval(poll);
+  });
+
+  function saveChart() {
+    if (isArchived || !chartRefPath) return;
+    const data = { ...fields, rows: chartRows, drugs, verbalOrders, careInstructions, auditLog, updatedAt: serverTimestamp() };
+    // Not awaited — with offline persistence this writes to the local cache
+    // immediately and syncs on reconnect; the Promise only resolves once the
+    // backend acknowledges it, so awaiting it would leave "Saving…" stuck
+    // forever offline.
+    setDoc(chartRefPath, data, { merge: true }).catch((e) => {
+      saveStatus = "Save failed: " + (e.code || e.message);
+    });
+    saveStatus = "Saved " + new Date().toLocaleTimeString();
+    return Promise.resolve();
+  }
+
+  function scheduleSave() {
+    if (isArchived) return;
+    saveStatus = "Saving…";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveChart, 600);
+  }
+
+  // Safety net: flush pending changes periodically and on tab hide/close.
+  onMount(() => {
+    const iv = setInterval(() => { if (chartEditMode || drugsEditMode) saveChart(); }, 15000);
+    const onVis = () => { if (document.visibilityState === "hidden" && (chartEditMode || drugsEditMode)) saveChart(); };
+    const onUnload = () => { if (chartEditMode || drugsEditMode) saveChart(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("beforeunload", onUnload);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("beforeunload", onUnload); };
+  });
+
+  function updateField(id, value) {
+    fields = { ...fields, [id]: value };
+    scheduleSave();
+  }
+
+  // --- Diagnosis modal ---
+  function openDiagnosisModal(startInEdit) {
+    diagEditText = fields.f_diagnosis || "";
+    diagEditing = !!startInEdit && !isArchived;
+    diagModalOpen = true;
+  }
+  function saveDiagnosisEdit() {
+    const oldVal = (fields.f_diagnosis || "").trim();
+    const newVal = diagEditText.trim();
+    if (oldVal !== newVal) logAudit('Diagnosis: "' + (oldVal || "—") + '" → "' + (newVal || "—") + '"');
+    updateField("f_diagnosis", diagEditText);
+    diagModalOpen = false;
+  }
+
+  // --- Drugs table ---
+  function enterDrugsEditMode() { drugsEditMode = true; editingDrugRows = {}; }
+  function exitDrugsEditMode() { drugsEditMode = false; editingDrugRows = {}; scheduleSave(); }
+  function unlockDrugRow(i) { drugRowSnapshots[i] = { ...drugs[i] }; editingDrugRows = { ...editingDrugRows, [i]: true }; }
+  function lockDrugRow(i) {
+    const before = drugRowSnapshots[i] || {};
+    const after = drugs[i] || {};
+    const wasBlank = !before.name && !before.route && !before.frequency && !before.action && !before.duration;
+    const changes = diffFields(before, after, { name: "Name", route: "Route", frequency: "Frequency", action: "Action", duration: "Duration" });
+    if (changes.length) {
+      const prefix = wasBlank ? ("Drug added (#" + (i + 1) + "): ") : ("Drug #" + (i + 1) + " edited: ");
+      logAudit(prefix + changes.join(", "));
+    }
+    delete drugRowSnapshots[i];
+    const n = { ...editingDrugRows }; delete n[i]; editingDrugRows = n;
+  }
+  function addDrug() {
+    const blank = { name: "", route: "", frequency: "", action: "", duration: "", createdAt: new Date().toISOString() };
+    drugs = [...drugs, blank];
+    drugRowSnapshots[drugs.length - 1] = { ...blank };
+    editingDrugRows = { ...editingDrugRows, [drugs.length - 1]: true };
+    scheduleSave();
+  }
+  function updateDrug(i, patch) {
+    drugs = drugs.map((row, idx) => idx === i ? { ...row, ...patch } : row);
+    scheduleSave();
+  }
+  function removeDrug(i) {
+    if (!confirm("Remove this drug from the list?")) return;
+    logAudit("Drug removed (#" + (i + 1) + "): " + (drugs[i]?.name || "(unnamed)"));
+    delete drugRowSnapshots[i];
+    drugs = drugs.filter((_, idx) => idx !== i);
+    const n = { ...editingDrugRows }; delete n[i]; editingDrugRows = n;
+    scheduleSave();
+  }
+
+  function openFreqModal(currentText, onApply) { freqModalText = currentText || ""; freqApply = onApply; freqModalOpen = true; }
+  function cancelFreqModal() { freqModalOpen = false; freqApply = null; }
+  function applyFreqModal() {
+    const text = freqModalText.trim();
+    freqModalOpen = false;
+    const apply = freqApply; freqApply = null;
+    if (apply) apply(text);
+  }
+  function handleFreqPick(i, val) {
+    const drug = drugs[i];
+    const isCustom = !!drug.frequency && !FREQ_OPTIONS.includes(drug.frequency);
+    if (val === "Other") openFreqModal(isCustom ? drug.frequency : "", (text) => updateDrug(i, { frequency: text, duration: autoDurationForFrequency(text) || drug.duration }));
+    else updateDrug(i, { frequency: val, duration: autoDurationForFrequency(val) || drug.duration });
+  }
+
+  // --- Chart table ---
+  function enterChartEditMode() { chartEditMode = true; editingChartRows = {}; }
+  function exitChartEditMode() { chartEditMode = false; editingChartRows = {}; scheduleSave(); }
+  function unlockChartRow(i) { chartRowSnapshots[i] = { ...chartRows[i] }; editingChartRows = { ...editingChartRows, [i]: true }; }
+  function lockChartRow(i) {
+    const row = chartRows[i];
+    const blocked = flaggedDrugRefs(row?.sno, drugs);
+    if (blocked.length) { alert(flaggedDrugMessage(blocked) + "\n\nPlease correct the Drug S/N before continuing."); return; }
+    const before = chartRowSnapshots[i] || {};
+    const wasBlank = !before.sno && !before.date && !before.time && !(before.skipped || []).length;
+    const changes = diffFields(before, row || {}, { date: "Date", sno: "Drug S/N", time: "Time", dose: "Dose", route: "Route", remark: "Remark" });
+    if (changes.length) {
+      const prefix = wasBlank ? ("Dose recorded (row " + (i + 1) + "): ") : ("Chart entry edited (row " + (i + 1) + "): ");
+      logAudit(prefix + changes.join(", "));
+    }
+    delete chartRowSnapshots[i];
+    const n = { ...editingChartRows }; delete n[i]; editingChartRows = n;
+  }
+  function touchRowNurse(row) { return (!row.nurse && currentNurseName) ? { ...row, nurse: currentNurseName } : row; }
+  function updateChartRow(i, patch) {
+    chartRows = chartRows.map((row, idx) => idx === i ? touchRowNurse({ ...row, ...patch }) : row);
+    scheduleSave();
+  }
+
+  function activeDrugNumbers() {
+    return drugs.map((d, i) => i + 1).filter(n => { const dr = drugs[n - 1]; return !dr.action || dr.action === "Ongoing"; });
+  }
+  function openSnoPicker(i) {
+    const nums = (chartRows[i]?.sno || "").match(/\d+/g) || [];
+    const active = activeDrugNumbers();
+    snoPickerSelected = nums.map(n => parseInt(n, 10)).filter(n => active.includes(n));
+    const skipMap = {};
+    (chartRows[i]?.skipped || []).forEach(({ num, reason }) => { skipMap[num] = reason; });
+    snoPickerSkipped = skipMap;
+    snoPickerEditingNum = -1;
+    snoPickerEditText = "";
+    snoPickerRow = i;
+  }
+  function closeSnoPicker() { snoPickerRow = -1; snoPickerSelected = []; snoPickerSkipped = {}; snoPickerEditingNum = -1; snoPickerEditText = ""; }
+  function toggleSnoPickerDrug(num) {
+    const wasSelected = snoPickerSelected.includes(num);
+    if (!wasSelected && snoPickerSkipped[num]) { const n = { ...snoPickerSkipped }; delete n[num]; snoPickerSkipped = n; }
+    snoPickerSelected = wasSelected ? snoPickerSelected.filter(n => n !== num) : [...snoPickerSelected, num].sort((a, b) => a - b);
+  }
+  function openSnoSkipEditor(num) { snoPickerEditText = snoPickerSkipped[num] || ""; snoPickerEditingNum = num; }
+  function cancelSnoSkipEditor() { snoPickerEditingNum = -1; snoPickerEditText = ""; }
+  function saveSnoSkipReason() {
+    const num = snoPickerEditingNum;
+    const text = snoPickerEditText.trim();
+    const n = { ...snoPickerSkipped };
+    if (text) n[num] = text; else delete n[num];
+    snoPickerSkipped = n;
+    if (text) snoPickerSelected = snoPickerSelected.filter(x => x !== num);
+    snoPickerEditingNum = -1;
+    snoPickerEditText = "";
+  }
+  function clearSnoSkipReason(num) {
+    const n = { ...snoPickerSkipped }; delete n[num]; snoPickerSkipped = n;
+    if (snoPickerEditingNum === num) { snoPickerEditingNum = -1; snoPickerEditText = ""; }
+  }
+  function applySnoPicker() {
+    const i = snoPickerRow;
+    const sno = snoPickerSelected.join(", ");
+    const skipped = Object.entries(snoPickerSkipped)
+      .filter(([, reason]) => reason && reason.trim())
+      .map(([num, reason]) => ({ num: parseInt(num, 10), reason: reason.trim() }));
+    updateChartRow(i, { sno, route: computeRouteFromSno(sno, drugs), skipped });
+    closeSnoPicker();
+  }
+
+  function addChartRow(count) {
+    const additions = Array.from({ length: count }, () => defaultRow());
+    const startIdx = chartRows.length;
+    chartRows = [...chartRows, ...additions];
+    const n = { ...editingChartRows };
+    for (let i = 0; i < count; i++) { n[startIdx + i] = true; chartRowSnapshots[startIdx + i] = { ...defaultRow() }; }
+    editingChartRows = n;
+    scheduleSave();
+  }
+  function removeChartRow() {
+    if (!chartRows.length) return;
+    const last = chartRows[chartRows.length - 1];
+    if (last && (last.sno || last.date || last.time)) {
+      logAudit('Chart row removed (row ' + chartRows.length + '): Drug S/N="' + (last.sno || "") + '", Date=' + (last.date || "—") + ", Time=" + (last.time || "—"));
+    }
+    delete chartRowSnapshots[chartRows.length - 1];
+    const n = { ...editingChartRows }; delete n[chartRows.length - 1]; editingChartRows = n;
+    chartRows = chartRows.slice(0, -1);
+    scheduleSave();
+  }
+
+  // --- Verbal orders ---
+  function openVerbalModal() { editingVerbalIndex = -1; verbalModalOpen = true; }
+  function closeVerbalModal() { editingVerbalIndex = -1; verbalModalOpen = false; }
+  async function submitVerbalOrder() {
+    const text = verbalInput.trim();
+    if (!text) return;
+    verbalOrders = [...verbalOrders, { text, nurse: currentNurseName, at: new Date().toISOString() }];
+    logAudit("Verbal order added: " + text.slice(0, 80));
+    verbalInput = "";
+    await saveChart();
+  }
+  async function saveVerbalEdit(i) {
+    const trimmed = verbalEditText.trim();
+    if (!trimmed) return;
+    verbalOrders = verbalOrders.map((o, idx) => idx === i ? { ...o, text: trimmed, editedAt: new Date().toISOString() } : o);
+    logAudit("Verbal order edited: " + trimmed.slice(0, 80));
+    editingVerbalIndex = -1;
+    await saveChart();
+  }
+  async function deleteVerbalOrder(i) {
+    if (!confirm("Delete this verbal order? This cannot be undone.")) return;
+    logAudit("Verbal order deleted: " + (verbalOrders[i]?.text || "").slice(0, 80));
+    verbalOrders = verbalOrders.filter((_, idx) => idx !== i);
+    if (editingVerbalIndex === i) editingVerbalIndex = -1;
+    await saveChart();
+  }
+
+  // --- Care instructions ---
+  function openCareModal() { editingCareIndex = -1; careModalOpen = true; markCareSeen(); }
+  function closeCareModal() { editingCareIndex = -1; careModalOpen = false; }
+  async function submitCareInstruction() {
+    const lines = careInput.split("\n").map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    careInstructions = [...careInstructions, ...lines.map(text => ({ text, nurse: currentNurseName, at: new Date().toISOString() }))];
+    lines.forEach(text => logAudit("Care instruction added: " + text.slice(0, 80)));
+    careInput = "";
+    await saveChart();
+  }
+  async function saveCareEdit(i) {
+    const trimmed = careEditText.trim();
+    if (!trimmed) return;
+    careInstructions = careInstructions.map((o, idx) => idx === i ? { ...o, text: trimmed, editedAt: new Date().toISOString() } : o);
+    logAudit("Care instruction edited: " + trimmed.slice(0, 80));
+    editingCareIndex = -1;
+    await saveChart();
+  }
+  async function deleteCareInstruction(i) {
+    if (!confirm("Delete this care instruction? This cannot be undone.")) return;
+    logAudit("Care instruction deleted: " + (careInstructions[i]?.text || "").slice(0, 80));
+    careInstructions = careInstructions.filter((_, idx) => idx !== i);
+    if (editingCareIndex === i) editingCareIndex = -1;
+    await saveChart();
+  }
+
+  // --- Bulk upload ---
+  function openBulkModal() { bulkText = ""; bulkParseMsg = ""; bulkParsed = []; bulkStep = 1; bulkModalOpen = true; }
+  function closeBulkModal() { bulkModalOpen = false; }
+  function parseBulk() {
+    const parsed = parseBulkText(bulkText);
+    if (!parsed.length) { bulkParseMsg = "Paste at least one drug line first."; return; }
+    bulkParsed = parsed;
+    bulkStep = 2;
+  }
+  function updateBulkRow(i, patch) { bulkParsed = bulkParsed.map((r, idx) => idx === i ? { ...r, ...patch } : r); }
+  function removeBulkRow(i) { bulkParsed = bulkParsed.filter((_, idx) => idx !== i); }
+  function confirmBulkImport() {
+    if (!bulkParsed.length) { closeBulkModal(); return; }
+    const next = drugs.map(d => ({ ...d }));
+    bulkParsed.forEach((d) => {
+      const emptySlotIdx = next.findIndex(x => !x.name && !x.route && !x.frequency && !x.duration);
+      if (emptySlotIdx !== -1) next[emptySlotIdx] = d; else next.push(d);
+    });
+    drugs = next;
+    closeBulkModal();
+    if (!drugsEditMode) drugsEditMode = true;
+    scheduleSave();
+  }
+
+  onDestroy(() => { clearTimeout(saveTimer); });
+</script>
+
+<Topbar brand="Drug Course Chart">
+  <button class="btn btn-secondary no-print" onclick={goBack}>&larr; Back</button>
+</Topbar>
+
+<div class="container">
+  {#if !loaded}
+    <div class="card-box"><div class="loading-note">Loading chart…</div></div>
+  {:else}
+    <div class="card-box">
+      {#if patient}
+        <div class="patient-banner">
+          <strong>{patient.name || "Unnamed patient"}</strong>
+          {#if patient.ward}<span> · {patient.ward}</span>{/if}
+        </div>
+      {/if}
+
+      <div class="save-status no-print" style="font-size:12px;color:#666;">{saveStatus}</div>
+
+      <div class="chart-fields" style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;">
+        <div class="field">
+          <label for="f_admission">Date of Admission</label>
+          <input id="f_admission" type="date" value={fields.f_admission} disabled={isArchived}
+            onchange={(e) => updateField("f_admission", e.target.value)} />
+        </div>
+        <div class="field">
+          <label for="f_discharge">Discharge Date</label>
+          <input id="f_discharge" type="date" value={fields.f_discharge} readonly disabled />
+        </div>
+        <div class="field" style="flex:1;min-width:220px;">
+          <label for="f_diagnosis">Diagnosis</label>
+          <button type="button" class="field-value-btn" style="width:100%;text-align:left;" onclick={() => openDiagnosisModal(false)}>
+            {fields.f_diagnosis ? (fields.f_diagnosis.length > 60 ? fields.f_diagnosis.slice(0, 60) + "…" : fields.f_diagnosis) : "(tap to enter)"}
+          </button>
+        </div>
+      </div>
+
+      <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn btn-secondary" onclick={openVerbalModal}>Verbal Orders ({verbalOrders.length})</button>
+        <button class="btn btn-secondary" onclick={openCareModal}>
+          Care Instructions ({careInstructions.length}){#if careUnreadCount} <span class="badge">{careUnreadCount}</span>{/if}
+        </button>
+        <button class="btn btn-secondary" onclick={openAuditModal}>
+          Audit Log ({auditLog.length}){#if auditUnreadCount} <span class="badge">{auditUnreadCount}</span>{/if}
+        </button>
+      </div>
+
+      <!-- Drugs table -->
+      <h3>Drugs</h3>
+      <div class="no-print" style="display:flex;gap:8px;margin-bottom:8px;">
+        {#if !isArchived}
+          {#if !drugsEditMode}
+            <button class="btn btn-primary" onclick={enterDrugsEditMode}>Edit Drugs</button>
+            <button class="btn btn-secondary" onclick={openBulkModal}>Bulk Upload</button>
+          {:else}
+            <button class="btn btn-success" onclick={exitDrugsEditMode}>Done Editing</button>
+            <button class="btn btn-secondary" onclick={addDrug}>+ Add Drug</button>
+          {/if}
+        {/if}
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="drug-course-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th>Due</th>
+              {#if drugsEditMode}<th class="no-print"></th>{/if}
+            </tr>
+          </thead>
+          <tbody>
+            {#each drugs as drug, i (i)}
+              {@const due = dueLabelFor(drug, i, chartRows, now)}
+              {@const seq = parseDoseSequence(drug.frequency)}
+              <tr>
+                <td>{i + 1}</td>
+                {#if drugsEditMode && editingDrugRows[i]}
+                  <td><input type="text" value={drug.name} oninput={(e) => updateDrug(i, { name: e.target.value })} /></td>
+                  <td>
+                    <select value={drug.route || ""} onchange={(e) => updateDrug(i, { route: e.target.value })}>
+                      {#each ROUTE_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
+                    </select>
+                  </td>
+                  <td>
+                    <select value={FREQ_OPTIONS.includes(drug.frequency) ? drug.frequency : (drug.frequency ? "Other" : "")}
+                      onchange={(e) => handleFreqPick(i, e.target.value)}>
+                      {#each FREQ_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
+                    </select>
+                    {#if drug.frequency && !FREQ_OPTIONS.includes(drug.frequency)}
+                      <div style="font-size:10px;color:#555;font-style:italic;margin-top:2px;cursor:pointer;" role="button" tabindex="0"
+                        onclick={() => openFreqModal(drug.frequency, (text) => updateDrug(i, { frequency: text }))}>
+                        {drug.frequency}
+                      </div>
+                    {/if}
+                  </td>
+                  <td>
+                    <select value={drug.action || ""} onchange={(e) => updateDrug(i, { action: e.target.value })}>
+                      {#each ACTION_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
+                    </select>
+                  </td>
+                  <td><input type="text" value={drug.duration} oninput={(e) => updateDrug(i, { duration: e.target.value })} /></td>
+                  <td style="color:{due.overdue ? '#dc2626' : '#555'};font-size:12px;">{due.text}</td>
+                  <td class="no-print"><button class="remove-drug-btn" onclick={() => { lockDrugRow(i); removeDrug(i); }}>x</button></td>
+                {:else}
+                  <td>{drug.name}
+                    {#if seq}
+                      <div class="dose-seq-badges">
+                        {#each seq as hr, idx}
+                          {@const given = idx < administrationTimesFor(chartRows, i).length}
+                          <span class={"dose-seq-pill " + (given ? "given" : "pending")}>{hr}h{given ? " ✓" : ""}</span>
+                        {/each}
+                      </div>
+                    {/if}
+                  </td>
+                  <td>{drug.route}</td>
+                  <td>{drug.frequency}</td>
+                  <td><span style="color:{actionColor(drug.action)};font-weight:600;">{drug.action || "—"}</span></td>
+                  <td>{drug.duration}</td>
+                  <td style="color:{due.overdue ? '#dc2626' : '#555'};font-size:12px;">{due.text}</td>
+                  {#if drugsEditMode}<td class="no-print"><button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => unlockDrugRow(i)}>Edit</button></td>{/if}
+                {/if}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Chart rows table -->
+      <h3 style="margin-top:24px;">Administration Chart</h3>
+      <div class="no-print" style="display:flex;gap:8px;margin-bottom:8px;">
+        {#if !isArchived}
+          {#if !chartEditMode}
+            <button class="btn btn-primary" onclick={enterChartEditMode}>Edit Chart</button>
+          {:else}
+            <button class="btn btn-success" onclick={exitChartEditMode}>Done Editing</button>
+            <button class="btn btn-secondary" onclick={() => addChartRow(5)}>+ 5 Rows</button>
+            <button class="btn btn-secondary" onclick={removeChartRow}>Remove Last Row</button>
+          {/if}
+        {/if}
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="drug-course-table">
+          <thead>
+            <tr><th>Date</th><th>Drug S/N</th><th>Time</th><th>Dose</th><th>Route</th><th>Nurse</th><th>Remark</th></tr>
+          </thead>
+          <tbody>
+            {#each chartRows as row, i (i)}
+              <tr>
+                {#if chartEditMode && editingChartRows[i]}
+                  <td><input type="date" value={row.date} onchange={(e) => updateChartRow(i, { date: e.target.value })} /></td>
+                  <td>
+                    <button class="field-value-btn" onclick={() => openSnoPicker(i)}>{row.sno || (row.skipped?.length ? row.skipped.map(s => s.num).join(", ") + " (not given)" : "Select…")}</button>
+                  </td>
+                  <td><input type="time" value={row.time} onchange={(e) => updateChartRow(i, { time: e.target.value })} /></td>
+                  <td><input type="text" value={row.dose} oninput={(e) => updateChartRow(i, { dose: e.target.value })} style="width:48px;" /></td>
+                  <td><input type="text" value={row.route} oninput={(e) => updateChartRow(i, { route: e.target.value })} style="width:60px;" /></td>
+                  <td>{row.nurse}</td>
+                  <td><input type="text" value={row.remark} oninput={(e) => updateChartRow(i, { remark: e.target.value })} /></td>
+                {:else}
+                  <td>{row.date}</td>
+                  <td>
+                    {row.sno}
+                    {#if row.skipped?.length}
+                      <button class="field-value-btn" style="color:#dc2626;font-size:11px;"
+                        onclick={() => skipReasonPopup = { nums: row.skipped.map(s => s.num), reason: row.skipped.map(s => s.reason).join("; ") }}>
+                        {row.skipped.map(s => s.num).join(",")} not given
+                      </button>
+                    {/if}
+                  </td>
+                  <td>{row.time}</td>
+                  <td>{row.dose}</td>
+                  <td>{row.route}</td>
+                  <td>{row.nurse}</td>
+                  <td>{row.remark}</td>
+                  {#if chartEditMode}<td class="no-print"><button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => unlockChartRow(i)}>Edit</button></td>{/if}
+                {/if}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="no-print" style="margin-top:16px;padding-top:12px;border-top:1px solid #ddd;font-size:12px;color:#888;">
+        Patient status changes (referred / transferred / discharged) are coming in a follow-up build — that flow
+        reads and archives Vitals, Glycemic, Intake &amp; Output and Seizure charts together, which haven't been
+        ported to this Svelte app yet.
+      </div>
+    </div>
+  {/if}
+</div>
+
+<!-- Diagnosis modal -->
+{#if diagModalOpen}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) diagModalOpen = false; }}>
+    <div class="modal-box diag-modal-box">
+      <div class="modal-header">
+        <h3>Diagnosis</h3>
+        <div class="diag-header-actions">
+          {#if !isArchived && !diagEditing}
+            <button class="diag-edit-btn" title="Edit diagnosis" onclick={() => { diagEditText = fields.f_diagnosis || ""; diagEditing = true; }}>✏️</button>
+          {/if}
+          <button class="diag-edit-btn" title="Close" onclick={() => diagModalOpen = false}>&times;</button>
+        </div>
+      </div>
+      <div class="diag-modal-body">
+        {#if diagEditing}
+          <textarea class="diag-edit-textarea" rows="3" placeholder="Enter diagnosis for this chart" bind:value={diagEditText}></textarea>
+        {:else}
+          <p class="diag-full-text">{fields.f_diagnosis || "(No diagnosis entered)"}</p>
+        {/if}
+      </div>
+      {#if diagEditing}
+        <div class="diag-modal-footer modal-footer">
+          <button class="btn btn-secondary" onclick={() => { diagEditText = fields.f_diagnosis || ""; diagEditing = false; }}>Cancel</button>
+          <button class="btn btn-primary" onclick={saveDiagnosisEdit}>Save</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+<!-- Frequency modal -->
+{#if freqModalOpen}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) cancelFreqModal(); }}>
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header"><h3>Custom Frequency</h3><button class="modal-close" onclick={cancelFreqModal}>&times;</button></div>
+      <div class="modal-body">
+        <textarea rows="4" style="width:100%;font-size:14px;padding:8px;box-sizing:border-box;resize:vertical;"
+          placeholder="e.g. STAT, then 40mg 12hrly" bind:value={freqModalText}></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick={cancelFreqModal}>Cancel</button>
+        <button class="btn btn-primary" onclick={applyFreqModal}>Apply</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Sno picker modal -->
+{#if snoPickerRow !== -1}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) closeSnoPicker(); }}>
+    <div class="modal-box">
+      <div class="modal-header"><h3>Select Drug(s) Given</h3><button class="modal-close" onclick={closeSnoPicker}>&times;</button></div>
+      <div class="modal-body">
+        {#each activeDrugNumbers() as num}
+          {@const drug = drugs[num - 1]}
+          {@const skipReason = snoPickerSkipped[num]}
+          <div class="sno-picker-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #eee;">
+            <label style="flex:1;display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" checked={snoPickerSelected.includes(num)} onchange={() => toggleSnoPickerDrug(num)} />
+              <span>{num}. {drug?.name || "(unnamed)"} {#if skipReason}<em style="color:#dc2626;">(not given)</em>{/if}</span>
+            </label>
+            <button type="button" class="diag-edit-btn" title="Not given reason" onclick={() => openSnoSkipEditor(num)}>✏️</button>
+          </div>
+          {#if snoPickerEditingNum === num}
+            <div style="padding:8px 0;">
+              <textarea rows="2" style="width:100%;" placeholder="Reason not given" bind:value={snoPickerEditText}></textarea>
+              <div style="display:flex;gap:6px;margin-top:4px;">
+                <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;" onclick={saveSnoSkipReason}>Save Reason</button>
+                {#if skipReason}<button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick={() => clearSnoSkipReason(num)}>Clear</button>{/if}
+                <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick={cancelSnoSkipEditor}>Cancel</button>
+              </div>
+            </div>
+          {/if}
+        {/each}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" style="flex:1;" onclick={applySnoPicker}>Done</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if skipReasonPopup}
+  <div class="field-popup-overlay no-print" style="display:flex;" onclick={(e) => { if (e.target === e.currentTarget) skipReasonPopup = null; }}>
+    <div class="field-popup-box">
+      <div class="field-popup-header"><h3>Drug {skipReasonPopup.nums.join(", ")} — Not Given</h3><button class="field-popup-close" onclick={() => skipReasonPopup = null}>&times;</button></div>
+      <div class="field-popup-body"><p class="field-popup-text">{skipReasonPopup.reason}</p></div>
+    </div>
+  </div>
+{/if}
+
+<!-- Verbal orders modal -->
+{#if verbalModalOpen}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) closeVerbalModal(); }}>
+    <div class="modal-box">
+      <div class="modal-header"><h3>Verbal Orders</h3><button class="modal-close" onclick={closeVerbalModal}>&times;</button></div>
+      <div class="modal-body">
+        {#if !isArchived}
+          <textarea rows="2" style="width:100%;" placeholder="New verbal order" bind:value={verbalInput}></textarea>
+          <button class="btn btn-primary" style="margin-top:6px;" onclick={submitVerbalOrder}>Add</button>
+        {/if}
+        {#each verbalOrders as order, i}
+          <div class="audit-entry">
+            <div class="audit-meta">{order.nurse || "Unknown"} · {order.at ? new Date(order.at).toLocaleString() : ""}</div>
+            {#if editingVerbalIndex === i}
+              <textarea rows="2" style="width:100%;" bind:value={verbalEditText}></textarea>
+              <div style="display:flex;gap:6px;margin-top:4px;">
+                <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;" onclick={() => saveVerbalEdit(i)}>Save</button>
+                <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick={() => editingVerbalIndex = -1}>Cancel</button>
+              </div>
+            {:else}
+              <div class="audit-text">{order.text}</div>
+              {#if !isArchived}
+                <div style="display:flex;gap:6px;margin-top:4px;">
+                  <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => { editingVerbalIndex = i; verbalEditText = order.text; }}>Edit</button>
+                  <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => deleteVerbalOrder(i)}>Delete</button>
+                </div>
+              {/if}
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Care instructions modal -->
+{#if careModalOpen}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) closeCareModal(); }}>
+    <div class="modal-box">
+      <div class="modal-header"><h3>Care Instructions</h3><button class="modal-close" onclick={closeCareModal}>&times;</button></div>
+      <div class="modal-body">
+        {#if !isArchived}
+          <textarea rows="3" style="width:100%;" placeholder="One instruction per line" bind:value={careInput}></textarea>
+          <button class="btn btn-primary" style="margin-top:6px;" onclick={submitCareInstruction}>Add</button>
+        {/if}
+        {#each careInstructions as instr, i}
+          <div class="audit-entry">
+            <div class="audit-meta">{instr.nurse || "Unknown"} · {instr.at ? new Date(instr.at).toLocaleString() : ""}</div>
+            {#if editingCareIndex === i}
+              <textarea rows="2" style="width:100%;" bind:value={careEditText}></textarea>
+              <div style="display:flex;gap:6px;margin-top:4px;">
+                <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;" onclick={() => saveCareEdit(i)}>Save</button>
+                <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick={() => editingCareIndex = -1}>Cancel</button>
+              </div>
+            {:else}
+              <div class="audit-text">{instr.text}</div>
+              {#if !isArchived}
+                <div style="display:flex;gap:6px;margin-top:4px;">
+                  <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => { editingCareIndex = i; careEditText = instr.text; }}>Edit</button>
+                  <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => deleteCareInstruction(i)}>Delete</button>
+                </div>
+              {/if}
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Audit log modal -->
+{#if auditModalOpen}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) auditModalOpen = false; }}>
+    <div class="modal-box">
+      <div class="modal-header"><h3>🕓 Audit Log</h3><button class="modal-close" onclick={() => auditModalOpen = false}>&times;</button></div>
+      <div class="modal-body">
+        {#if !auditLog.length}<p style="color:#777;font-size:13px;margin:0;">No changes logged yet.</p>{/if}
+        {#each [...auditLog].reverse() as entry}
+          <div class="audit-entry">
+            <div class="audit-meta">{entry.nurse || "Unknown"} · {entry.at ? new Date(entry.at).toLocaleString() : ""}</div>
+            <div class="audit-text">{entry.text}</div>
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Bulk upload modal -->
+{#if bulkModalOpen}
+  <div class="modal-overlay no-print" onclick={(e) => { if (e.target === e.currentTarget) closeBulkModal(); }}>
+    <div class="modal-box" style="max-width:640px;">
+      <div class="modal-header"><h3>Bulk Upload Drugs</h3><button class="modal-close" onclick={closeBulkModal}>&times;</button></div>
+      <div class="modal-body">
+        {#if bulkStep === 1}
+          <textarea rows="10" style="width:100%;font-family:inherit;font-size:13px;box-sizing:border-box;padding:8px;"
+            placeholder={"Tabs Omeprazole 20mg bd x2/52\nIV Ceftriaxone 1g 12hrly\nTab Doxycycline 100mg bd"}
+            bind:value={bulkText}></textarea>
+          {#if bulkParseMsg}<div style="font-size:12px;color:#dc2626;margin-top:6px;">{bulkParseMsg}</div>{/if}
+        {:else}
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead><tr style="background:#f2f2f2;">
+                <th style="border:1px solid #000;padding:4px;">Drug Name</th>
+                <th style="border:1px solid #000;padding:4px;">Route</th>
+                <th style="border:1px solid #000;padding:4px;">Frequency</th>
+                <th style="border:1px solid #000;padding:4px;">Duration</th>
+                <th style="border:1px solid #000;padding:4px;"></th>
+              </tr></thead>
+              <tbody>
+                {#each bulkParsed as d, i}
+                  <tr>
+                    <td style="border:1px solid #000;padding:3px;"><input type="text" style="width:100%;border:none;font-size:12px;" value={d.name} oninput={(e) => updateBulkRow(i, { name: e.target.value })} /></td>
+                    <td style="border:1px solid #000;padding:3px;">
+                      <select style="font-size:12px;" value={d.route || ""} onchange={(e) => updateBulkRow(i, { route: e.target.value })}>
+                        {#each ROUTE_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
+                      </select>
+                    </td>
+                    <td style="border:1px solid #000;padding:3px;"><input type="text" style="width:100%;border:none;font-size:12px;" value={d.frequency} oninput={(e) => updateBulkRow(i, { frequency: e.target.value })} /></td>
+                    <td style="border:1px solid #000;padding:3px;"><input type="text" style="width:100%;border:none;font-size:12px;" value={d.duration} oninput={(e) => updateBulkRow(i, { duration: e.target.value })} /></td>
+                    <td style="border:1px solid #000;padding:3px;text-align:center;"><button class="remove-drug-btn" onclick={() => removeBulkRow(i)}>x</button></td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </div>
+      {#if bulkStep === 1}
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick={closeBulkModal}>Cancel</button>
+          <button class="btn btn-primary" onclick={parseBulk}>Parse</button>
+        </div>
+      {:else}
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick={() => bulkStep = 1}>Back</button>
+          <button class="btn btn-success" onclick={confirmBulkImport}>Add to List</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
