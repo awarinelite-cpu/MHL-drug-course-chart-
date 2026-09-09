@@ -1,5 +1,13 @@
 <script>
-  import ComingSoon from "$lib/components/ComingSoon.svelte";
+  // Ported from src/pages/Seizure.jsx — a thin EntryChart config.
+  import EntryChart from "$lib/components/EntryChart.svelte";
+
+  const columns = [
+    { key: "time", label: "Time", type: "datetime-local" },
+    { key: "duration", label: "Duration", type: "text" },
+    { key: "type", label: "Type", type: "text" },
+    { key: "description", label: "Description", type: "text" }
+  ];
 </script>
 
-<ComingSoon title="Seizure Chart" />
+<EntryChart title="Seizure Chart" collectionName="seizure" {columns} entryNoun="Entry" />
