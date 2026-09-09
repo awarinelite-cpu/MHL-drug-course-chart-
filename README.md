@@ -50,17 +50,23 @@ npm run preview
   edit-patient form, allocate/unallocate, Patient Status (discharge /
   transfer / refer, archiving all charts for the admission to Overview),
   and the chart-grid links into the five per-patient charts.
+- **Vitals, Seizure, Intake & Output** (`/charts/vitals`,
+  `/charts/seizure`, `/charts/intake-output`) — all three are thin configs
+  on a new shared `EntryChart.svelte` component (grouped/gated fields,
+  select+Other textareas, popup cells, abnormal-value flagging, live vs.
+  archived-admission data, auto-saved summary card for I&O's 24-hour
+  balance).
 - Business-logic helpers (`src/lib/helpers/drugChartHelpers.js`,
-  `firestoreOffline.js`, `patientAdmissionStatus.js`, `avatar.js`,
-  `wardCensus.js`, `wardTransfer.js`, `patientParse.js`, `patientCsv.js`,
-  `wardNameMatch.js`, `nursesReportCommon.js`) were ported verbatim —
-  they're framework-agnostic JS, not React-specific.
+  `firestoreOffline.js`, `patientAdmissionStatus.js`,
+  `intakeOutputHelpers.js`, `avatar.js`, `wardCensus.js`, `wardTransfer.js`,
+  `patientParse.js`, `patientCsv.js`, `wardNameMatch.js`,
+  `nursesReportCommon.js`) were ported verbatim — they're
+  framework-agnostic JS, not React-specific.
 
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): Profile, Admin, Overview, Admission, Vitals, Blood
-Glucose, Intake & Output, Seizure, Calculators, Lab Reference, the Nurses
-Report section, PDF export, push notifications, the service worker, and
-the Capacitor Android wrapper.
+doesn't break): Profile, Admin, Overview, Admission, Blood Glucose,
+Calculators, Lab Reference, the Nurses Report section, PDF export, push
+notifications, the service worker, and the Capacitor Android wrapper.
 
 **Intentionally deferred:** the Drug Course Chart's patient status-change
 flow (referred / transferred / discharged) — in the original this reads
