@@ -29,7 +29,7 @@
     if (!patientId) { goto("/"); return; }
     loading = true;
     patientError = null;
-    getDocSafe(doc(db, "patients", patientId)).then((snap) => {
+    getDocSafe(doc(db, "patients_mhl", patientId)).then((snap) => {
       if (!snap.exists()) { goto("/"); return; }
       patient = { id: snap.id, ...snap.data() };
       loading = false;
@@ -74,7 +74,7 @@
   let statusMsg = $state({ color: "", text: "" });
 
   function allocationDocRef() {
-    return doc(db, "allocations", "alloc_" + authState.user.uid + "_" + patientId);
+    return doc(db, "allocations_mhl", "alloc_" + authState.user.uid + "_" + patientId);
   }
 
   // Africa/Lagos (WAT) is UTC+1 with no DST, so shifting the UTC clock by
@@ -102,7 +102,7 @@
   $effect(() => {
     if (!patientId) { chartDiagnosis = ""; return; }
     let cancelled = false;
-    getDocSafe(doc(db, "patients", patientId, "drugCourseChart", "main")).then((snap) => {
+    getDocSafe(doc(db, "patients_mhl", patientId, "drugCourseChart", "main")).then((snap) => {
       if (!cancelled && snap.exists()) chartDiagnosis = snap.data().f_diagnosis || "";
     }).catch(() => {
       // No connection and nothing cached — fall back to the patient
@@ -169,7 +169,7 @@
       updatedAt: serverTimestamp()
     };
     // Not awaited — same offline-hang reason as toggleAllocation above.
-    updateDoc(doc(db, "patients", patient.id), updates).catch((e) => {
+    updateDoc(doc(db, "patients_mhl", patient.id), updates).catch((e) => {
       console.warn("Patient edit queued locally; will retry once back online:", e);
     });
     patient = { ...patient, ...updates };

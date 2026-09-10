@@ -32,8 +32,8 @@
       let snap;
       try {
         snap = t === "ward"
-          ? await getDocs(query(collection(db, "archives"), where("wardKey", "==", wk)))
-          : await getDocs(query(collection(db, "archives"), where("type", "==", "overall")));
+          ? await getDocs(query(collection(db, "archives_mhl"), where("wardKey", "==", wk)))
+          : await getDocs(query(collection(db, "archives_mhl"), where("type", "==", "overall")));
       } catch (e) {
         emptyMsg = "Couldn't load the archive: " + (e.code || e.message || "unknown error");
         return;

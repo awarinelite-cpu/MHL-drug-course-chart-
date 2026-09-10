@@ -35,8 +35,8 @@
 
   const wk = weekId();
   const dateId = reportDateId();
-  const roleRef = doc(db, "nurseReportRoles", wk);
-  const wardsCol = collection(db, "nurseReports", dateId, "wards");
+  const roleRef = doc(db, "nurseReportRoles_mhl", wk);
+  const wardsCol = collection(db, "nurseReports_mhl", dateId, "wards");
 
   /** @type {'checking'|'denied'|'granted'|'error'} */
   let access = $state("checking");
@@ -147,7 +147,7 @@
 
     let patients = [];
     try {
-      const patientsSnap = await getDocsSafe(collection(db, "patients"));
+      const patientsSnap = await getDocsSafe(collection(db, "patients_mhl"));
       patientsSnap.forEach((d) => patients.push(d.data()));
     } catch {
       // Fall through with an empty patient list — wards just seed at 0
@@ -192,7 +192,7 @@
     syncBusy = true;
     syncStatus = { text: "", error: false };
     try {
-      const patientsSnap = await getDocsSafe(collection(db, "patients"));
+      const patientsSnap = await getDocsSafe(collection(db, "patients_mhl"));
       const patients = [];
       patientsSnap.forEach((d) => patients.push(d.data()));
       const batch = writeBatch(db);
@@ -403,7 +403,7 @@
       archiveStatus = { text: "Ward data is still loading (" + loadedWardCount + "/" + WARDS.length + " wards ready) \u2014 please wait a moment and try again.", error: true };
       return;
     }
-    const overallRef = doc(db, "archives", "overall_" + dateId);
+    const overallRef = doc(db, "archives_mhl", "overall_" + dateId);
     let existingSnap;
     try {
       existingSnap = await getDocSafe(overallRef);
@@ -441,7 +441,7 @@
     }
 
     WARDS.forEach((w) => {
-      const ref = doc(db, "archives", "ward_" + w.key + "_" + dateId);
+      const ref = doc(db, "archives_mhl", "ward_" + w.key + "_" + dateId);
       const payload = {
         type: "ward", wardKey: w.key, wardLabel: w.label, dateId, weekId: wk,
         fileName: wardReportPeriodLabel(dateId),

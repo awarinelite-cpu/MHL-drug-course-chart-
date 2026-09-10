@@ -15,7 +15,7 @@
   }
 
   const wk = weekId();
-  const roleRef = doc(db, "nurseReportRoles", wk);
+  const roleRef = doc(db, "nurseReportRoles_mhl", wk);
 
   let status = $state({ text: "Checking…", className: "status" });
 

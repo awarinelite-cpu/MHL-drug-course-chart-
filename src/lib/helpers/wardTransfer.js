@@ -25,7 +25,7 @@ export async function acceptTransfer(patientId, pendingTransfer, pedBedType) {
     updatedAt: serverTimestamp()
   };
   if (pendingTransfer.toWard === "PEDIATRIC/NICU WARD") updates.pedBedType = pedBedType || "";
-  await updateDoc(doc(db, "patients", patientId), updates);
+  await updateDoc(doc(db, "patients_mhl", patientId), updates);
 }
 
 // Rejecting (e.g. no bed space) just clears the pending transfer. The
@@ -33,7 +33,7 @@ export async function acceptTransfer(patientId, pendingTransfer, pedBedType) {
 // they reappear on their original ward's list automatically — nothing
 // else needs to be undone.
 export async function rejectTransfer(patientId) {
-  await updateDoc(doc(db, "patients", patientId), {
+  await updateDoc(doc(db, "patients_mhl", patientId), {
     pendingTransfer: deleteField(),
     updatedAt: serverTimestamp()
   });

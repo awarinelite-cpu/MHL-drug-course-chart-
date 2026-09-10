@@ -39,7 +39,7 @@
     try {
       // A single equality filter (no orderBy alongside it) avoids needing a
       // composite Firestore index — sorted client-side instead.
-      const snap = await getDocs(query(collection(db, "allocations"), where("uid", "==", authState.user.uid)));
+      const snap = await getDocs(query(collection(db, "allocations_mhl"), where("uid", "==", authState.user.uid)));
       snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
     } catch (e) {
       status = "Couldn't load: " + (e.code || e.message || "unknown error");
@@ -63,7 +63,7 @@
   async function removeAllocation(allocationId, ev) {
     ev.stopPropagation();
     try {
-      await deleteDoc(doc(db, "allocations", allocationId));
+      await deleteDoc(doc(db, "allocations_mhl", allocationId));
       allocations = allocations.filter(a => a.id !== allocationId);
     } catch (e) {
       alert("Couldn't remove: " + (e.code || e.message || "unknown error"));

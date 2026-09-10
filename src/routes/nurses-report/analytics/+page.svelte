@@ -122,7 +122,7 @@
     const perWard = blankPerWardTotals();
     let daysCovered = 0;
 
-    const archiveSnap = await getDocs(query(collection(db, "archives"), where("type", "==", "overall")));
+    const archiveSnap = await getDocs(query(collection(db, "archives_mhl"), where("type", "==", "overall")));
     let todayArchived = false;
     archiveSnap.forEach(docSnap => {
       const data = docSnap.data();
@@ -134,7 +134,7 @@
     });
 
     if (todayId >= startId && todayId <= endId && !todayArchived) {
-      const wardsSnap = await getDocs(collection(db, "nurseReports", todayId, "wards"));
+      const wardsSnap = await getDocs(collection(db, "nurseReports_mhl", todayId, "wards"));
       const liveWardsMap = {};
       wardsSnap.forEach(d => { liveWardsMap[d.id] = d.data(); });
       if (Object.keys(liveWardsMap).length) {

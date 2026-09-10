@@ -114,7 +114,7 @@
 
   async function loadAllPatients(force) {
     if (allPatients && !force) return allPatients;
-    const snap = await getDocs(collection(db, "patients"));
+    const snap = await getDocs(collection(db, "patients_mhl"));
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
     list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -171,7 +171,7 @@
     // with offline persistence, the write lands in the local IndexedDB
     // cache synchronously; the returned Promise only resolves once back
     // online and the backend acknowledges it.
-    const ref = doc(collection(db, "patients"));
+    const ref = doc(collection(db, "patients_mhl"));
     setDoc(ref, data).catch((e) => {
       console.warn("Patient write queued locally; will retry once back online:", e);
     });
@@ -238,7 +238,7 @@
   // creating the chart doc if needed, skipping exact repeats.
   async function addDrugsToChart(patientId, drugsParsed) {
     if (!drugsParsed || !drugsParsed.length) return 0;
-    const ref = doc(db, "patients", patientId, "drugCourseChart", "main");
+    const ref = doc(db, "patients_mhl", patientId, "drugCourseChart", "main");
     let existingDrugs = [];
     try {
       const snap = await getDoc(ref);
@@ -278,7 +278,7 @@
           allergies: r.data.allergies, insurance: r.data.insurance,
           createdAt: serverTimestamp(), createdBy: authState.user ? authState.user.uid : null
         };
-        const ref = doc(collection(db, "patients"));
+        const ref = doc(collection(db, "patients_mhl"));
         setDoc(ref, data).catch((e) => {
           console.warn("Bulk patient write queued locally; will retry once back online:", e);
         });

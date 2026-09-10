@@ -91,7 +91,7 @@
   }
 
   async function loadPatients() {
-    const snap = await getDocs(collection(db, "patients"));
+    const snap = await getDocs(collection(db, "patients_mhl"));
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
     list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -183,12 +183,12 @@
   async function runDeletePatient(p) {
     patientStatus = "Deleting " + (p.name || "patient") + "…";
     async function deleteAllInSubcollection(sub) {
-      const snap = await getDocs(collection(db, "patients", p.id, sub));
-      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, "patients", p.id, sub, d.id))));
+      const snap = await getDocs(collection(db, "patients_mhl", p.id, sub));
+      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, "patients_mhl", p.id, sub, d.id))));
     }
     try {
       await Promise.all(PATIENT_SUBCOLLECTIONS.map(deleteAllInSubcollection));
-      await deleteDoc(doc(db, "patients", p.id));
+      await deleteDoc(doc(db, "patients_mhl", p.id));
     } catch (e) {
       alert("Delete failed: " + (e.code || e.message || "unknown error"));
       patientStatus = "";

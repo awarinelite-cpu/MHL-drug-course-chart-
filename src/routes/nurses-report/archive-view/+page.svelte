@@ -147,7 +147,7 @@
     if (!archiveId) { deniedMsg = "No report was specified."; return; }
     let snap;
     try {
-      snap = await getDoc(doc(db, "archives", archiveId));
+      snap = await getDoc(doc(db, "archives_mhl", archiveId));
     } catch (e) {
       deniedMsg = "Couldn't load this report: " + (e.code || e.message || "unknown error");
       return;
@@ -180,7 +180,7 @@
 
     saving = true;
     try {
-      await updateDoc(doc(db, "archives", archiveId), payload);
+      await updateDoc(doc(db, "archives_mhl", archiveId), payload);
       editStatus = { text: "Saved.", error: false };
       await load();
     } catch (e) {

@@ -87,7 +87,7 @@ export function formatVitalsLine(v) {
 }
 
 async function fetchLatestVitals(patientId) {
-  const q = query(collection(db, "patients", patientId, "vitals"), orderBy("time", "desc"), limit(1));
+  const q = query(collection(db, "patients_mhl", patientId, "vitals"), orderBy("time", "desc"), limit(1));
   const snap = await getDocsSafe(q);
   if (snap.empty) return null;
   return snap.docs[0].data();
@@ -150,7 +150,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
       const info = patientWardAndBedTypeForReportKey(wardKey);
       if (!info) { wardPatientOptions = []; return; }
       try {
-        const q = query(collection(db, "patients"), where("ward", "==", info.wardLabel));
+        const q = query(collection(db, "patients_mhl"), where("ward", "==", info.wardLabel));
         const snap = await getDocsSafe(q);
         const list = [];
         snap.forEach((d) => {
@@ -174,7 +174,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
       adminEditOverride = false; // default to read-only even for admin; they tap the edit icon per ward
       wardDoc = null;
       topStatus = { text: "Loading\u2026", error: false };
-      const ref = doc(db, "nurseReports", dateId, "wards", wardKey);
+      const ref = doc(db, "nurseReports_mhl", dateId, "wards", wardKey);
       let snap;
       try {
         snap = await getDocSafe(ref);
@@ -199,7 +199,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
         let filledFromPatients = false;
         if (patientWardInfo) {
           try {
-            const patientsSnap = await getDocs(collection(db, "patients"));
+            const patientsSnap = await getDocs(collection(db, "patients_mhl"));
             const patients = [];
             patientsSnap.forEach((d) => patients.push(d.data()));
             const headcount = wardHeadcount(patients, patientWardInfo.wardLabel, patientWardInfo.bedType);
@@ -209,7 +209,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
         }
         if (!filledFromPatients && !snap.exists()) {
           try {
-            const prevRef = doc(db, "nurseReports", prevDateId(dateId), "wards", wardKey);
+            const prevRef = doc(db, "nurseReports_mhl", prevDateId(dateId), "wards", wardKey);
             const prevSnap = await getDocSafe(prevRef);
             if (prevSnap.exists() && typeof prevSnap.data().occ === "number") next = { ...next, startOcc: prevSnap.data().occ };
           } catch (e) { /* non-fatal — leave startOcc at 0, nurse can correct it */ }
@@ -302,7 +302,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
     if (!emr) { emrLookup = { ...emrLookup, [id]: null }; return; }
     emrLookup = { ...emrLookup, [id]: { text: "Looking up patient\u2026", error: false } };
     try {
-      const q = query(collection(db, "patients"), where("emr", "==", emr), limit(1));
+      const q = query(collection(db, "patients_mhl"), where("emr", "==", emr), limit(1));
       const snap = await getDocsSafe(q);
       if (snap.empty) {
         emrLookup = { ...emrLookup, [id]: { text: "No patient found with that EMR number \u2014 fill in details manually.", error: false } };
@@ -372,7 +372,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
       doc_ = { ...doc_, shifts: { ...doc_.shifts, am: { ...doc_.shifts.am, nurseOnDuty: profile.name } } };
       wardDoc = doc_;
     }
-    const ref = doc(db, "nurseReports", dateId, "wards", wardKey);
+    const ref = doc(db, "nurseReports_mhl", dateId, "wards", wardKey);
     const finalDoc = { ...doc_, occ: census.occ, vac: census.vac, ...movementTotals, ...demographicTotals };
     try {
       await setDoc(ref, { ...finalDoc, updatedAt: serverTimestamp(), updatedBy: profile.name || "Unknown" }, { merge: true });
@@ -413,7 +413,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
     }
 
     const finalDoc = { ...doc_, occ: census.occ, vac: census.vac, ...movementTotals, ...demographicTotals };
-    const ref = doc(db, "nurseReports", dateId, "wards", wardKey);
+    const ref = doc(db, "nurseReports_mhl", dateId, "wards", wardKey);
     const payload = {
       ...finalDoc, submitted: true, locked: true,
       submittedBy: profile.name || "Unknown", submittedByUid: user?.uid || null, submittedAt: serverTimestamp(),
