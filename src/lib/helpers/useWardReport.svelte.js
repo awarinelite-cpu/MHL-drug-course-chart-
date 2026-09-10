@@ -20,7 +20,7 @@ import {
 } from "./nursesReportCommon.js";
 import { patientWardAndBedTypeForReportKey } from "./wardNameMatch.js";
 import { wardHeadcount } from "./wardCensus.js";
-import { applyPatientStatus, closeOutDischargedPatient, activeAdmissionTag, clearAdmissionTag } from "./patientAdmissionStatus.js";
+import { applyPatientStatus, closeOutDischargedPatient, activeAdmissionTag, clearAdmissionTag, ADMISSION_TAG_STATUS_STAMP } from "./patientAdmissionStatus.js";
 
 export const movementFields = SHIFT_STAT_FIELDS;
 const byKey = (k) => movementFields.find((f) => f.key === k);
@@ -364,6 +364,11 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
         // and the nurse doesn't have to set it by hand, but never
         // override something the nurse already picked themselves.
         if (!next.status && record.dischargeStatus) next.status = record.dischargeStatus;
+        // Same idea for a patient tagged TRANS IN FROM A&E / NEW PATIENT
+        // (see admissionTag on wardPatientOptions) — pre-fill Status to
+        // the matching write-up stamp, again only if the nurse hasn't
+        // already set something themselves.
+        if (!next.status && record.admissionTag) next.status = ADMISSION_TAG_STATUS_STAMP[record.admissionTag] || "";
         return next;
       })
     };

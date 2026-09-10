@@ -52,6 +52,15 @@ export async function closeOutDischargedPatient(patientId) {
 // through the Ward Report, whichever comes first — see activeAdmissionTag
 // and clearAdmissionTag below.
 export const ADMISSION_TAG_LABEL = { AE_TRANSFER: 'TRANS IN from A&E', NEW_PATIENT: 'NEW PATIENT' };
+
+// Maps an admissionTag to the matching PATIENT_STATUS_OPTIONS string (see
+// nursesReportCommon.js) — these were already options on the write-up's
+// own Status dropdown before this feature existed, just never set
+// automatically. Used by selectPatientFromWard to pre-fill Status the
+// same way it already does for dischargeStatus, so picking a tagged
+// patient stamps their write-up correctly without the nurse having to
+// pick it by hand.
+export const ADMISSION_TAG_STATUS_STAMP = { AE_TRANSFER: 'TRANS IN FROM A&E', NEW_PATIENT: 'NEW PATIENT' };
 const ADMISSION_TAG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function toMillis(v) {
