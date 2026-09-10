@@ -20,7 +20,7 @@ import {
 } from "./nursesReportCommon.js";
 import { patientWardAndBedTypeForReportKey } from "./wardNameMatch.js";
 import { wardHeadcount } from "./wardCensus.js";
-import { applyPatientStatus, closeOutDischargedPatient } from "./patientAdmissionStatus.js";
+import { applyPatientStatus, closeOutDischargedPatient, activeAdmissionTag, clearAdmissionTag } from "./patientAdmissionStatus.js";
 
 export const movementFields = SHIFT_STAT_FIELDS;
 const byKey = (k) => movementFields.find((f) => f.key === k);
@@ -165,7 +165,12 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
           // name and write a closing note; see WardPatientPicker.svelte for
           // how it's shown, and submitReport below for how they finally
           // drop off once that note is submitted.
-          list.push({ id: d.id, name: data.name || "", emr: data.emr || "", age: data.age || "", admissionDate: data.admissionDate || "", diagnosis: data.diagnosis || "", dischargeStatus: data.dischargeStatus || "" });
+          // admissionTag ('AE_TRANSFER' / 'NEW_PATIENT' / '') mirrors
+          // dischargeStatus but on the arrival side — see
+          // ADMISSION_TAG_LABEL/activeAdmissionTag in
+          // patientAdmissionStatus.js and WardPatientPicker.svelte for how
+          // it's shown (blue, vs dischargeStatus's red).
+          list.push({ id: d.id, name: data.name || "", emr: data.emr || "", age: data.age || "", admissionDate: data.admissionDate || "", diagnosis: data.diagnosis || "", dischargeStatus: data.dischargeStatus || "", admissionTag: activeAdmissionTag(data) });
         });
         list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         if (!cancelled) wardPatientOptions = list;
@@ -483,6 +488,19 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
         ? { text: "Report submitted, but could not archive: " + archiveErrors.join("; "), error: true }
         : { text: "Report submitted.", error: false };
       wardDoc = { ...wardDoc, ...doc_, submitted: true, locked: true, nightUpdateBy: payload.nightUpdateBy || wardDoc.nightUpdateBy };
+
+      // A patient tagged AE_TRANSFER/NEW_PATIENT (see wardPatientOptions
+      // above) whose name was picked for one of this report's write-ups
+      // has now had a report written on them — clear their blue tag. Not
+      // gated on navigator.onLine like the discharge archiving above:
+      // nothing else depends on this succeeding, so it's fine to just
+      // fire it and let Firestore's offline queue catch up later.
+      const admissionTaggedIds = new Set(wardPatientOptions.filter((p) => p.admissionTag).map((p) => p.id));
+      doc_.patients.forEach((p) => {
+        if (p.sourcePatientId && admissionTaggedIds.has(p.sourcePatientId)) {
+          clearAdmissionTag(p.sourcePatientId).catch(() => {});
+        }
+      });
     } catch (e) {
       saveStatus = { text: "Couldn't submit: " + (e.code || e.message || "unknown error"), error: true };
     }

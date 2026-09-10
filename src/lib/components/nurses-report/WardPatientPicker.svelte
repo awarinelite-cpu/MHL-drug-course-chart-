@@ -10,6 +10,8 @@
   // a closing report is submitted for them (see submitReport in
   // useWardReport.svelte.js), so the nurse can still find and tap them to
   // write that closing note.
+  import { ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
+
   let { value = "", options = [], onSelect, id = undefined } = $props();
 
   let open = $state(false);
@@ -41,6 +43,8 @@
               </span>
               {#if o.dischargeStatus}
                 <div class="ward-patient-picker-tag">{o.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : "Discharged"}</div>
+              {:else if o.admissionTag}
+                <div class="ward-patient-picker-tag admission">{ADMISSION_TAG_LABEL[o.admissionTag] || o.admissionTag}</div>
               {/if}
             </div>
           </div>
