@@ -36,7 +36,7 @@
   $effect(() => {
     if (!patientId) { goto("/"); return; }
     patientError = null;
-    getDocSafe(doc(db, "patients_mhl", patientId)).then((snap) => {
+    getDocSafe(doc(db, "patients", patientId)).then((snap) => {
       if (!snap.exists()) { goto("/"); return; }
       patient = { id: snap.id, ...snap.data() };
     }).catch((e) => {
@@ -77,7 +77,7 @@
     if (!pid) return;
     (async () => {
       if (archived) {
-        const snap = await getDocSafe(doc(db, "patients_mhl", pid, "admissions", aid));
+        const snap = await getDocSafe(doc(db, "patients", pid, "admissions", aid));
         if (!snap.exists()) { notFound = true; return; }
         const data = snap.data();
         archivedAdmissionData = data;
@@ -89,7 +89,7 @@
           badgeClass: BADGE_CLASS[data.archiveReason] || "badge-discharged"
         };
       } else {
-        const drugSnap = await getDocSafe(doc(db, "patients_mhl", pid, "drugCourseChart", "main"));
+        const drugSnap = await getDocSafe(doc(db, "patients", pid, "drugCourseChart", "main"));
         info = {
           diagnosis: (drugSnap.exists() && drugSnap.data().f_diagnosis) || "No diagnosis entered yet",
           metaLabel: "Currently active",
@@ -109,11 +109,11 @@
   // in progress on the live charts.
   async function hasActiveData() {
     const [drugSnap, bgSnap, vitalsSnap, ioSnap, seizureSnap] = await Promise.all([
-      getDocSafe(doc(db, "patients_mhl", patientId, "drugCourseChart", "main")),
-      getDocSafe(doc(db, "patients_mhl", patientId, "bloodGlucose", "main")),
-      getDocsSafe(collection(db, "patients_mhl", patientId, "vitals")),
-      getDocsSafe(collection(db, "patients_mhl", patientId, "intakeOutput")),
-      getDocsSafe(collection(db, "patients_mhl", patientId, "seizure"))
+      getDocSafe(doc(db, "patients", patientId, "drugCourseChart", "main")),
+      getDocSafe(doc(db, "patients", patientId, "bloodGlucose", "main")),
+      getDocsSafe(collection(db, "patients", patientId, "vitals")),
+      getDocsSafe(collection(db, "patients", patientId, "intakeOutput")),
+      getDocsSafe(collection(db, "patients", patientId, "seizure"))
     ]);
     const drugData = drugSnap.exists() ? drugSnap.data() : null;
     const bgData = bgSnap.exists() ? bgSnap.data() : null;
@@ -166,8 +166,8 @@
       const ioSummary = admData.intakeOutputSummary || { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10) };
 
       await Promise.all([
-        setDoc(doc(db, "patients_mhl", patientId, "drugCourseChart", "main"), restoredDrugChart),
-        setDoc(doc(db, "patients_mhl", patientId, "bloodGlucose", "main"), {
+        setDoc(doc(db, "patients", patientId, "drugCourseChart", "main"), restoredDrugChart),
+        setDoc(doc(db, "patients", patientId, "bloodGlucose", "main"), {
           chartType: bg.chartType || "6point",
           // A record archived before per-type storage existed may still only
           // have the old single 'rows' field — carry it into whichever type
@@ -176,16 +176,16 @@
           rows3: bg.rows3 || (bg.chartType === "3point" ? (bg.rows || []) : []),
           updatedAt: serverTimestamp()
         }),
-        setDoc(doc(db, "patients_mhl", patientId, "intakeOutputSummary", "current"), { ...ioSummary, updatedAt: serverTimestamp() }),
-        ...(admData.vitals || []).map(entry => addDoc(collection(db, "patients_mhl", patientId, "vitals"), entry)),
-        ...(admData.intakeOutput || []).map(entry => addDoc(collection(db, "patients_mhl", patientId, "intakeOutput"), entry)),
-        ...(admData.seizure || []).map(entry => addDoc(collection(db, "patients_mhl", patientId, "seizure"), entry))
+        setDoc(doc(db, "patients", patientId, "intakeOutputSummary", "current"), { ...ioSummary, updatedAt: serverTimestamp() }),
+        ...(admData.vitals || []).map(entry => addDoc(collection(db, "patients", patientId, "vitals"), entry)),
+        ...(admData.intakeOutput || []).map(entry => addDoc(collection(db, "patients", patientId, "intakeOutput"), entry)),
+        ...(admData.seizure || []).map(entry => addDoc(collection(db, "patients", patientId, "seizure"), entry))
       ]);
 
       // The discharge is cancelled, not just superseded — remove the
       // archived record so it doesn't keep showing as a closed admission
       // alongside the now-active one it was restored into.
-      await deleteDoc(doc(db, "patients_mhl", patientId, "admissions", admissionId));
+      await deleteDoc(doc(db, "patients", patientId, "admissions", admissionId));
 
       readmitStatus = { color: "#16a34a", text: "Readmitted — redirecting to the active chart…" };
       setTimeout(() => goto("/charts/drug-course-chart?patient=" + patientId + "&from=admission"), 900);

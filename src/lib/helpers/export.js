@@ -13,19 +13,19 @@ import { db } from "$lib/firebase.js";
 function toRows(snap) { const arr = []; snap.forEach(d => arr.push(d.data())); return arr; }
 
 async function gatherPatient(patientId) {
-  const snap = await getDoc(doc(db, "patients_mhl", patientId));
+  const snap = await getDoc(doc(db, "patients", patientId));
   if (!snap.exists()) throw new Error("Patient not found.");
   return { id: patientId, ...snap.data() };
 }
 
 async function gatherActiveAdmission(patientId) {
   const [drugSnap, bgSnap, vitalsSnap, ioSnap, ioSumSnap, seizureSnap] = await Promise.all([
-    getDoc(doc(db, "patients_mhl", patientId, "drugCourseChart", "main")),
-    getDoc(doc(db, "patients_mhl", patientId, "bloodGlucose", "main")),
-    getDocs(query(collection(db, "patients_mhl", patientId, "vitals"), orderBy("time", "asc"))),
-    getDocs(query(collection(db, "patients_mhl", patientId, "intakeOutput"), orderBy("time", "asc"))),
-    getDoc(doc(db, "patients_mhl", patientId, "intakeOutputSummary", "current")),
-    getDocs(query(collection(db, "patients_mhl", patientId, "seizure"), orderBy("time", "asc")))
+    getDoc(doc(db, "patients", patientId, "drugCourseChart", "main")),
+    getDoc(doc(db, "patients", patientId, "bloodGlucose", "main")),
+    getDocs(query(collection(db, "patients", patientId, "vitals"), orderBy("time", "asc"))),
+    getDocs(query(collection(db, "patients", patientId, "intakeOutput"), orderBy("time", "asc"))),
+    getDoc(doc(db, "patients", patientId, "intakeOutputSummary", "current")),
+    getDocs(query(collection(db, "patients", patientId, "seizure"), orderBy("time", "asc")))
   ]);
   return {
     kind: "active",
@@ -79,7 +79,7 @@ function normalizeArchived(data, id) {
 }
 
 async function gatherArchivedAdmission(patientId, admissionId) {
-  const snap = await getDoc(doc(db, "patients_mhl", patientId, "admissions", admissionId));
+  const snap = await getDoc(doc(db, "patients", patientId, "admissions", admissionId));
   if (!snap.exists()) throw new Error("Admission record not found.");
   return normalizeArchived(snap.data(), admissionId);
 }
@@ -87,12 +87,12 @@ async function gatherArchivedAdmission(patientId, admissionId) {
 async function gatherAllArchivedAdmissions(patientId) {
   const out = [];
   try {
-    const q = query(collection(db, "patients_mhl", patientId, "admissions"), orderBy("archivedAt", "asc"));
+    const q = query(collection(db, "patients", patientId, "admissions"), orderBy("archivedAt", "asc"));
     const snap = await getDocs(q);
     snap.forEach(d => out.push(normalizeArchived(d.data(), d.id)));
   } catch (e) {
     // Composite index may not exist yet — fall back to an unordered fetch, sorted client-side.
-    const snap = await getDocs(collection(db, "patients_mhl", patientId, "admissions"));
+    const snap = await getDocs(collection(db, "patients", patientId, "admissions"));
     const raw = [];
     snap.forEach(d => raw.push({ id: d.id, ...d.data() }));
     raw.sort((a, b) => (a.archivedAtDisplay || "").localeCompare(b.archivedAtDisplay || ""));
@@ -158,7 +158,7 @@ export function downloadRecordAsJson(record, tag) {
 // cadence they choose (e.g. weekly) and store off-platform.
 
 async function gatherAllPatientIds() {
-  const snap = await getDocs(collection(db, "patients_mhl"));
+  const snap = await getDocs(collection(db, "patients"));
   const ids = [];
   snap.forEach(d => ids.push(d.id));
   return ids;
@@ -237,7 +237,7 @@ function addPatientHeader(pdf, record) {
   const rows = [
     ["Name", p.name || "-", "EMR", p.emr || "-"],
     ["Hospital No", p.hospNo || "-", "Age", p.age || "-"],
-    ["Ward", p.ward || "-", "Date of Admission", p.admissionDate || "-"],
+    ["Ward", p.wardMhl || "-", "Date of Admission", p.admissionDate || "-"],
     ["Insurance", p.insurance || "-", "", ""]
   ];
   autoTable(pdf, {

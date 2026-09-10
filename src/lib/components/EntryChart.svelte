@@ -80,7 +80,7 @@
   $effect(() => {
     if (!patientId) { patient = null; return; }
     let cancelled = false;
-    getDoc(doc(db, "patients_mhl", patientId)).then((snap) => {
+    getDoc(doc(db, "patients", patientId)).then((snap) => {
       if (cancelled) return;
       if (snap.exists()) patient = { id: snap.id, ...snap.data() };
     }).catch(() => { /* header just stays blank if this fails */ });
@@ -123,7 +123,7 @@
   $effect(() => {
     if (unsubLive) { unsubLive(); unsubLive = null; }
     if (isArchived || !patientId) return;
-    const q = query(collection(db, "patients_mhl", patientId, collectionName), orderBy("time", "desc"));
+    const q = query(collection(db, "patients", patientId, collectionName), orderBy("time", "desc"));
     unsubLive = onSnapshot(q, (snap) => {
       const rows = [];
       snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
@@ -136,7 +136,7 @@
   $effect(() => {
     if (!isArchived || !patientId) return;
     (async () => {
-      const admSnap = await getDoc(doc(db, "patients_mhl", patientId, "admissions", admissionId));
+      const admSnap = await getDoc(doc(db, "patients", patientId, "admissions", admissionId));
       const admData = admSnap.exists() ? admSnap.data() : {};
       archiveMeta = admData;
       archiveRows = admData[collectionName] || [];
@@ -149,7 +149,7 @@
     const totals = summary.compute(rows);
     const [collName, docId] = summary.storeAt;
     try {
-      await setDoc(doc(db, "patients_mhl", patientId, collName, docId), {
+      await setDoc(doc(db, "patients", patientId, collName, docId), {
         ...totals, periodDate: new Date().toISOString().slice(0, 10), updatedAt: serverTimestamp()
       }, { merge: true });
     } catch (e) { /* summary is a convenience record — a failed save here isn't fatal */ }
@@ -215,7 +215,7 @@
     // syncs on reconnect, but addDoc()'s Promise wouldn't resolve until
     // then. That left "Add Entry"/"Add Reading" silently doing nothing
     // while offline — no error, form never cleared, entry never appeared.
-    setDoc(doc(collection(db, "patients_mhl", patientId, collectionName)), data).catch((e) => {
+    setDoc(doc(collection(db, "patients", patientId, collectionName)), data).catch((e) => {
       console.warn("Entry queued locally; will retry once back online:", e);
     });
 
@@ -226,7 +226,7 @@
   }
 
   async function deleteEntry(id) {
-    if (confirm("Delete this entry?")) await deleteDoc(doc(db, "patients_mhl", patientId, collectionName, id));
+    if (confirm("Delete this entry?")) await deleteDoc(doc(db, "patients", patientId, collectionName, id));
   }
 
   const displayRows = $derived(isArchived

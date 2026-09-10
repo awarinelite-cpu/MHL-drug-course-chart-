@@ -114,7 +114,7 @@
 
   async function loadAllPatients(force) {
     if (allPatients && !force) return allPatients;
-    const snap = await getDocs(collection(db, "patients_mhl"));
+    const snap = await getDocs(collection(db, "patients"));
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
     list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -159,8 +159,8 @@
     const diagnosis = newForm.diagnosis.trim();
     const data = {
       name, emr,
-      diagnosis, ward: newForm.ward.trim(),
-      pedBedType: newForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (newForm.pedBedType || "") : "",
+      diagnosis, wardMhl: newForm.ward.trim(),
+      pedBedTypeMhl: newForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (newForm.pedBedType || "") : "",
       age: newForm.age.trim(),
       hospNo: newForm.hospNo.trim(), admissionDate: newForm.admissionDate.trim(), allergies: newForm.allergies.trim(),
       insurance: newForm.insurance.trim(),
@@ -171,7 +171,7 @@
     // with offline persistence, the write lands in the local IndexedDB
     // cache synchronously; the returned Promise only resolves once back
     // online and the backend acknowledges it.
-    const ref = doc(collection(db, "patients_mhl"));
+    const ref = doc(collection(db, "patients"));
     setDoc(ref, data).catch((e) => {
       console.warn("Patient write queued locally; will retry once back online:", e);
     });
@@ -238,7 +238,7 @@
   // creating the chart doc if needed, skipping exact repeats.
   async function addDrugsToChart(patientId, drugsParsed) {
     if (!drugsParsed || !drugsParsed.length) return 0;
-    const ref = doc(db, "patients_mhl", patientId, "drugCourseChart", "main");
+    const ref = doc(db, "patients", patientId, "drugCourseChart", "main");
     let existingDrugs = [];
     try {
       const snap = await getDoc(ref);
@@ -273,12 +273,12 @@
       } else {
         const data = {
           name: r.data.name, emr: r.data.emr, diagnosis: r.data.diagnosis,
-          ward: r.data.ward, pedBedType: r.data.ward === "PEDIATRIC/NICU WARD" ? r.data.pedBedType : "",
+          wardMhl: r.data.ward, pedBedTypeMhl: r.data.ward === "PEDIATRIC/NICU WARD" ? r.data.pedBedType : "",
           age: r.data.age, hospNo: r.data.hospNo, admissionDate: r.data.admissionDate,
           allergies: r.data.allergies, insurance: r.data.insurance,
           createdAt: serverTimestamp(), createdBy: authState.user ? authState.user.uid : null
         };
-        const ref = doc(collection(db, "patients_mhl"));
+        const ref = doc(collection(db, "patients"));
         setDoc(ref, data).catch((e) => {
           console.warn("Bulk patient write queued locally; will retry once back online:", e);
         });
@@ -308,15 +308,19 @@
 
   const q = $derived(searchQuery.trim().toLowerCase());
   const myWard = $derived(authState.profile?.ward || "");
-  // Patients mid-transfer (pendingTransfer set) are held out of every
+  // Patients mid-transfer (pendingTransferMhl set) are held out of every
   // normal ward list — they only show up in the receiving ward's "New
   // Patient" queue until a nurse there accepts or rejects them. The
-  // search box is a general patient lookup, not a ward-scoped one.
+  // search box is a general patient lookup across every patient this
+  // hospital shares with 68 (same /patients record), not a ward-scoped
+  // one — a patient with no wardMhl yet (only ever admitted on 68, or
+  // never transferred onto an MHL ward) still turns up here by name/EMR,
+  // just not on any specific ward list until transferred onto one.
   const visiblePatients = $derived((allPatients || []).filter(p =>
-    !p.pendingTransfer &&
+    !p.pendingTransferMhl &&
     (q
       ? ((p.emr || "").toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q))
-      : (!myWard || p.ward === myWard))
+      : (!myWard || p.wardMhl === myWard))
   ));
   const reportWardKeys = $derived(reportWardKeysForPatientWard(myWard));
   const isSplitWard = $derived(reportWardKeys.length > 1);
@@ -340,7 +344,7 @@
         const groups = wardBreakdown.map((b) => ({
           ...b,
           label: (WARDS.find((w) => w.key === b.key) || {}).label || b.key,
-          patients: visiblePatients.filter((p) => p.pedBedType === b.bedType)
+          patients: visiblePatients.filter((p) => p.pedBedTypeMhl === b.bedType)
         }));
         const assigned = new Set(groups.flatMap((g) => g.patients.map((p) => p.id)));
         const unassigned = visiblePatients.filter((p) => !assigned.has(p.id));
@@ -545,7 +549,7 @@
       {#if allPatients && visiblePatients.length > 0 && !pedGroups}
         {#each visiblePatients as p (p.id)}
           <div class="search-result-item" onclick={() => openPatient(p)}>
-            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.ward ? ". Ward: " + p.ward : ""}</span>
+            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}</span>
             <span>{p.diagnosis || ""}</span>
           </div>
         {/each}

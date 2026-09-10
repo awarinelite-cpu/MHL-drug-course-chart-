@@ -5,9 +5,12 @@
 // shift handover (see wardNameMatch.js), so the two numbers a nurse sees
 // can't drift apart.
 //
-// Patients mid-transfer (pendingTransfer set) are excluded — they aren't
-// settled on any ward's census yet, the same rule Home's patient list uses
-// to hide them until a nurse on the receiving ward accepts or rejects them.
+// Patients mid-transfer (pendingTransferMhl set) are excluded — they aren't
+// settled on any MHL ward's census yet, the same rule Home's patient list
+// uses to hide them until a nurse on the receiving ward accepts or rejects
+// them. Reads MHL's own wardMhl/pedBedTypeMhl fields — 68 counts the same
+// shared /patients records against its own ward/pedBedType fields, so the
+// two hospitals' censuses never mix.
 //
 // `bedType`, when given, further filters to patients whose pedBedType
 // matches — used for PEDIATRIC/NICU WARD's PAED BED / PAED COT split,
@@ -15,8 +18,8 @@
 // falsy value) to count the whole ward regardless of bed type.
 export function wardHeadcount(patients, wardLabel, bedType) {
   return (patients || []).filter(p =>
-    !p.pendingTransfer &&
-    (!wardLabel || p.ward === wardLabel) &&
-    (!bedType || (p.pedBedType || "") === bedType)
+    !p.pendingTransferMhl &&
+    (!wardLabel || p.wardMhl === wardLabel) &&
+    (!bedType || (p.pedBedTypeMhl || "") === bedType)
   ).length;
 }

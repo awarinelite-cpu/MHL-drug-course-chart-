@@ -105,7 +105,7 @@
   $effect(() => {
     if (!patientId) { patient = null; return; }
     let cancelled = false;
-    getDoc(doc(db, "patients_mhl", patientId)).then((snap) => {
+    getDoc(doc(db, "patients", patientId)).then((snap) => {
       if (cancelled) return;
       if (snap.exists()) patient = { id: snap.id, ...snap.data() };
     }).catch(() => { /* header just stays blank if this fails */ });
@@ -127,14 +127,14 @@
     (async () => {
       let data = null;
       if (isArchived) {
-        const admSnap = await getDoc(doc(db, "patients_mhl", patientId, "admissions", admissionId));
+        const admSnap = await getDoc(doc(db, "patients", patientId, "admissions", admissionId));
         if (admSnap.exists()) {
           const admData = admSnap.data();
           archiveMeta = admData;
           data = admData.bloodGlucose || null;
         }
       } else {
-        chartRefPath = doc(db, "patients_mhl", patientId, "bloodGlucose", "main");
+        chartRefPath = doc(db, "patients", patientId, "bloodGlucose", "main");
         const snap = await getDoc(chartRefPath);
         if (snap.exists()) data = snap.data();
       }

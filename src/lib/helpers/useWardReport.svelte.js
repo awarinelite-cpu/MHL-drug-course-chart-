@@ -87,7 +87,7 @@ export function formatVitalsLine(v) {
 }
 
 async function fetchLatestVitals(patientId) {
-  const q = query(collection(db, "patients_mhl", patientId, "vitals"), orderBy("time", "desc"), limit(1));
+  const q = query(collection(db, "patients", patientId, "vitals"), orderBy("time", "desc"), limit(1));
   const snap = await getDocsSafe(q);
   if (snap.empty) return null;
   return snap.docs[0].data();
@@ -150,13 +150,13 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
       const info = patientWardAndBedTypeForReportKey(wardKey);
       if (!info) { wardPatientOptions = []; return; }
       try {
-        const q = query(collection(db, "patients_mhl"), where("ward", "==", info.wardLabel));
+        const q = query(collection(db, "patients"), where("wardMhl", "==", info.wardLabel));
         const snap = await getDocsSafe(q);
         const list = [];
         snap.forEach((d) => {
           const data = d.data();
-          if (data.pendingTransfer) return;
-          if (info.bedType && (data.pedBedType || "") !== info.bedType) return;
+          if (data.pendingTransferMhl) return;
+          if (info.bedType && (data.pedBedTypeMhl || "") !== info.bedType) return;
           list.push({ id: d.id, name: data.name || "", emr: data.emr || "", age: data.age || "", admissionDate: data.admissionDate || "", diagnosis: data.diagnosis || "" });
         });
         list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -199,7 +199,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
         let filledFromPatients = false;
         if (patientWardInfo) {
           try {
-            const patientsSnap = await getDocs(collection(db, "patients_mhl"));
+            const patientsSnap = await getDocs(collection(db, "patients"));
             const patients = [];
             patientsSnap.forEach((d) => patients.push(d.data()));
             const headcount = wardHeadcount(patients, patientWardInfo.wardLabel, patientWardInfo.bedType);
@@ -302,7 +302,7 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
     if (!emr) { emrLookup = { ...emrLookup, [id]: null }; return; }
     emrLookup = { ...emrLookup, [id]: { text: "Looking up patient\u2026", error: false } };
     try {
-      const q = query(collection(db, "patients_mhl"), where("emr", "==", emr), limit(1));
+      const q = query(collection(db, "patients"), where("emr", "==", emr), limit(1));
       const snap = await getDocsSafe(q);
       if (snap.empty) {
         emrLookup = { ...emrLookup, [id]: { text: "No patient found with that EMR number \u2014 fill in details manually.", error: false } };

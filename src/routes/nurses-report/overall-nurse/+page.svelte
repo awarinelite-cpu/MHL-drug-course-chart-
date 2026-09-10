@@ -147,7 +147,7 @@
 
     let patients = [];
     try {
-      const patientsSnap = await getDocsSafe(collection(db, "patients_mhl"));
+      const patientsSnap = await getDocsSafe(collection(db, "patients"));
       patientsSnap.forEach((d) => patients.push(d.data()));
     } catch {
       // Fall through with an empty patient list — wards just seed at 0
@@ -192,7 +192,7 @@
     syncBusy = true;
     syncStatus = { text: "", error: false };
     try {
-      const patientsSnap = await getDocsSafe(collection(db, "patients_mhl"));
+      const patientsSnap = await getDocsSafe(collection(db, "patients"));
       const patients = [];
       patientsSnap.forEach((d) => patients.push(d.data()));
       const batch = writeBatch(db);

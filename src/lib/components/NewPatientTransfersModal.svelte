@@ -4,7 +4,7 @@
   import { PED_BED_TYPES } from "$lib/helpers/drugChartHelpers.js";
 
   // `transfers` is the list of patient objects (each carrying its own
-  // pendingTransfer field) whose pendingTransfer.toWard === this ward.
+  // pendingTransferMhl field) whose pendingTransferMhl.toWard === this ward.
   // `onResolved(patientId)` is called after a successful accept/reject so
   // the caller can refresh its patient list.
   let { ward = "", transfers = [], onClose, onResolved } = $props();
@@ -24,7 +24,7 @@
     }
     busyId = p.id;
     try {
-      await acceptTransfer(p.id, p.pendingTransfer, ward === "PEDIATRIC/NICU WARD" ? pedBedTypeById[p.id] : undefined);
+      await acceptTransfer(p.id, p.pendingTransferMhl, ward === "PEDIATRIC/NICU WARD" ? pedBedTypeById[p.id] : undefined);
       onResolved(p.id);
     } catch (e) {
       errMsg = "Could not accept " + (p.name || "this patient") + ": " + (e.code || e.message);
@@ -33,7 +33,7 @@
   }
 
   async function handleReject(p) {
-    if (!confirm("Reject " + (p.name || "this patient") + "? They will stay listed on " + (p.pendingTransfer.fromWard || "their previous ward") + ".")) return;
+    if (!confirm("Reject " + (p.name || "this patient") + "? They will stay listed on " + (p.pendingTransferMhl.fromWard || "their previous ward") + ".")) return;
     errMsg = "";
     busyId = p.id;
     try {
@@ -62,7 +62,7 @@
         <div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px;">
           <div style="font-weight:bold;">{p.name || "Unnamed"} — EMR: {p.emr || "N/A"}</div>
           <div style="font-size:12px;color:#555;margin-top:2px;">
-            Trans in from: {p.pendingTransfer.fromWard || "Unknown ward"}
+            Trans in from: {p.pendingTransferMhl.fromWard || "Unknown ward"}
           </div>
           {#if p.diagnosis}<div style="font-size:12px;color:#555;margin-top:2px;">{p.diagnosis}</div>{/if}
           {#if ward === "PEDIATRIC/NICU WARD"}

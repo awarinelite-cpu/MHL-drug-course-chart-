@@ -25,7 +25,7 @@
     if (!patientId) { patient = null; return; }
     (async () => {
       try {
-        const snap = await getDoc(doc(db, "patients_mhl", patientId));
+        const snap = await getDoc(doc(db, "patients", patientId));
         if (snap.exists()) patient = snap.data();
       } catch (e) { /* non-critical — calculators still work without patient context */ }
     })();

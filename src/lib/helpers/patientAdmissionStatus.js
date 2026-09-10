@@ -27,12 +27,14 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
     // on, just on a different ward, so none of the current charts (drug
     // course chart, vitals, blood glucose, intake & output, seizure)
     // get archived or reset here. We only park the patient in a
-    // pendingTransfer for the receiving ward to accept. See
-    // wardTransfer.js's acceptTransfer, which simply moves `ward` over
-    // with everything else left untouched.
+    // pendingTransferMhl for the receiving MHL ward to accept — 68's own
+    // transfer flow uses its own `pendingTransfer` field on this same
+    // shared patient doc, so the two never collide. See wardTransfer.js's
+    // acceptTransfer, which simply moves `wardMhl` over with everything
+    // else (including the shared charts) left untouched.
     try {
-      await updateDoc(doc(db, 'patients_mhl', patientId), {
-        pendingTransfer: {
+      await updateDoc(doc(db, 'patients', patientId), {
+        pendingTransferMhl: {
           toWard: wardChosen,
           fromWard: fromWard || '',
           transferredByName: transferredByName || '',
@@ -48,17 +50,17 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
   }
 
   async function fetchEntries(collName) {
-    const snap = await getDocs(collection(db, 'patients_mhl', patientId, collName));
+    const snap = await getDocs(collection(db, 'patients', patientId, collName));
     const arr = [];
     snap.forEach(d => arr.push(d.data()));
     return arr;
   }
   async function clearEntries(collName) {
-    const snap = await getDocs(collection(db, 'patients_mhl', patientId, collName));
-    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'patients_mhl', patientId, collName, d.id))));
+    const snap = await getDocs(collection(db, 'patients', patientId, collName));
+    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'patients', patientId, collName, d.id))));
   }
 
-  const chartRef = doc(db, 'patients_mhl', patientId, 'drugCourseChart', 'main');
+  const chartRef = doc(db, 'patients', patientId, 'drugCourseChart', 'main');
   let drugChartData = {
     f_admission: '', f_discharge: '', f_diagnosis: '',
     rows: [], drugs: [], verbalOrders: [], careInstructions: [], auditLog: []
@@ -84,7 +86,7 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
 
   let bgData = { chartType: '6point', rows6: [], rows3: [] };
   try {
-    const bgSnap = await getDoc(doc(db, 'patients_mhl', patientId, 'bloodGlucose', 'main'));
+    const bgSnap = await getDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'));
     if (bgSnap.exists()) {
       const d = bgSnap.data();
       bgData = { chartType: d.chartType || '6point', rows6: d.rows6 || [], rows3: d.rows3 || [] };
@@ -97,7 +99,7 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
     [vitalsArr, ioArr, seizureArr] = await Promise.all([fetchEntries('vitals'), fetchEntries('intakeOutput'), fetchEntries('seizure')]);
   } catch (e) { /* fine to archive with whatever we could gather */ }
   try {
-    const ioSumSnap = await getDoc(doc(db, 'patients_mhl', patientId, 'intakeOutputSummary', 'current'));
+    const ioSumSnap = await getDoc(doc(db, 'patients', patientId, 'intakeOutputSummary', 'current'));
     if (ioSumSnap.exists()) {
       const d = ioSumSnap.data();
       ioSummary = { intake: d.intake || 0, output: d.output || 0, balance: d.balance || 0 };
@@ -119,7 +121,7 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
   };
 
   try {
-    await addDoc(collection(db, 'patients_mhl', patientId, 'admissions'), admissionDoc);
+    await addDoc(collection(db, 'patients', patientId, 'admissions'), admissionDoc);
   } catch (e) {
     return { ok: false, message: 'Could not save to Overview: ' + (e.code || e.message) };
   }
@@ -134,8 +136,8 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
   try {
     await Promise.all([
       setDoc(chartRef, blankDrugChart), // full overwrite (no merge) so old data doesn't linger
-      setDoc(doc(db, 'patients_mhl', patientId, 'bloodGlucose', 'main'), { chartType: '6point', rows6: [], rows3: [], updatedAt: serverTimestamp() }),
-      setDoc(doc(db, 'patients_mhl', patientId, 'intakeOutputSummary', 'current'), { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10), updatedAt: serverTimestamp() }),
+      setDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'), { chartType: '6point', rows6: [], rows3: [], updatedAt: serverTimestamp() }),
+      setDoc(doc(db, 'patients', patientId, 'intakeOutputSummary', 'current'), { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10), updatedAt: serverTimestamp() }),
       clearEntries('vitals'), clearEntries('intakeOutput'), clearEntries('seizure')
     ]);
   } catch (e) {

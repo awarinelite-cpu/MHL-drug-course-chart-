@@ -29,7 +29,7 @@
     if (!patientId) { goto("/"); return; }
     loading = true;
     patientError = null;
-    getDocSafe(doc(db, "patients_mhl", patientId)).then((snap) => {
+    getDocSafe(doc(db, "patients", patientId)).then((snap) => {
       if (!snap.exists()) { goto("/"); return; }
       patient = { id: snap.id, ...snap.data() };
       loading = false;
@@ -102,7 +102,7 @@
   $effect(() => {
     if (!patientId) { chartDiagnosis = ""; return; }
     let cancelled = false;
-    getDocSafe(doc(db, "patients_mhl", patientId, "drugCourseChart", "main")).then((snap) => {
+    getDocSafe(doc(db, "patients", patientId, "drugCourseChart", "main")).then((snap) => {
       if (!cancelled && snap.exists()) chartDiagnosis = snap.data().f_diagnosis || "";
     }).catch(() => {
       // No connection and nothing cached — fall back to the patient
@@ -129,7 +129,7 @@
         patientId: patient.id,
         patientName: patient.name || "Unnamed",
         patientEmr: patient.emr || "",
-        patientWard: patient.ward || "",
+        patientWard: patient.wardMhl || "",
         patientDiagnosis: patient.diagnosis || "",
         shift: currentShiftLabel(),
         allocatedAt: serverTimestamp()
@@ -143,8 +143,8 @@
     if (!patient) return;
     editForm = {
       name: patient.name || "", emr: patient.emr || "",
-      diagnosis: patient.diagnosis || "", ward: patient.ward || "",
-      pedBedType: patient.pedBedType || "",
+      diagnosis: patient.diagnosis || "", ward: patient.wardMhl || "",
+      pedBedType: patient.pedBedTypeMhl || "",
       age: patient.age || "", hospNo: patient.hospNo || "",
       admissionDate: patient.admissionDate || "", allergies: patient.allergies || "",
       insurance: patient.insurance || ""
@@ -161,15 +161,15 @@
     if (!name || !emr) { editMsg = "Name and EMR number are required."; return; }
     const updates = {
       name, emr,
-      diagnosis: editForm.diagnosis.trim(), ward: editForm.ward.trim(),
-      pedBedType: editForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (editForm.pedBedType || "") : "",
+      diagnosis: editForm.diagnosis.trim(), wardMhl: editForm.ward.trim(),
+      pedBedTypeMhl: editForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (editForm.pedBedType || "") : "",
       age: editForm.age.trim(),
       hospNo: editForm.hospNo.trim(), admissionDate: editForm.admissionDate.trim(), allergies: editForm.allergies.trim(),
       insurance: editForm.insurance.trim(),
       updatedAt: serverTimestamp()
     };
     // Not awaited — same offline-hang reason as toggleAllocation above.
-    updateDoc(doc(db, "patients_mhl", patient.id), updates).catch((e) => {
+    updateDoc(doc(db, "patients", patient.id), updates).catch((e) => {
       console.warn("Patient edit queued locally; will retry once back online:", e);
     });
     patient = { ...patient, ...updates };
@@ -190,7 +190,7 @@
     // entries once archived, so those two are blocked until back online
     // rather than made offline-tolerant like the rest of this page's edits.
     // Transferring wards no longer touches any of that — it's just a single
-    // pendingTransfer write — so it doesn't need this gate.
+    // pendingTransferMhl write — so it doesn't need this gate.
     if (reason !== "transferred" && !navigator.onLine) {
       statusMsg = { color: "#dc2626", text: "This needs an internet connection — referring or discharging archives records from several charts at once and then clears them, and doing that safely requires reading the real data rather than whatever's cached locally. Please try again once online." };
       return;
@@ -205,7 +205,7 @@
     statusApplying = true;
     statusMsg = { color: "#555", text: reason === "transferred" ? "Sending transfer…" : "Saving all charts for this admission…" };
 
-    const result = await applyPatientStatus({ patientId: patient.id, reason, transferWard, fromWard: patient.ward, transferredByName: authState.profile?.name });
+    const result = await applyPatientStatus({ patientId: patient.id, reason, transferWard, fromWard: patient.wardMhl, transferredByName: authState.profile?.name });
     if (!result.ok) {
       statusMsg = { color: "#dc2626", text: result.message };
       statusApplying = false;
@@ -244,7 +244,7 @@
     <div class="card-box">
       <PatientBanner
         patient={{ ...patient, diagnosis: chartDiagnosis || patient.diagnosis }}
-        ward={patient.ward}
+        ward={patient.wardMhl}
       >
         {#snippet extra()}
           <button class="btn btn-secondary edit-patient-btn" title="Edit patient information" onclick={openEditPatient}>✎</button>

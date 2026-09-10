@@ -91,7 +91,7 @@
   }
 
   async function loadPatients() {
-    const snap = await getDocs(collection(db, "patients_mhl"));
+    const snap = await getDocs(collection(db, "patients"));
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
     list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -146,7 +146,7 @@
   let filteredPatients = $derived.by(() => {
     const q = patientFilter.trim().toLowerCase();
     return !q ? allPatients : allPatients.filter(p =>
-      (p.name || "").toLowerCase().includes(q) || (p.emr || "").toLowerCase().includes(q) || (p.ward || "").toLowerCase().includes(q)
+      (p.name || "").toLowerCase().includes(q) || (p.emr || "").toLowerCase().includes(q) || (p.wardMhl || "").toLowerCase().includes(q)
     );
   });
 
@@ -183,12 +183,12 @@
   async function runDeletePatient(p) {
     patientStatus = "Deleting " + (p.name || "patient") + "…";
     async function deleteAllInSubcollection(sub) {
-      const snap = await getDocs(collection(db, "patients_mhl", p.id, sub));
-      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, "patients_mhl", p.id, sub, d.id))));
+      const snap = await getDocs(collection(db, "patients", p.id, sub));
+      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, "patients", p.id, sub, d.id))));
     }
     try {
       await Promise.all(PATIENT_SUBCOLLECTIONS.map(deleteAllInSubcollection));
-      await deleteDoc(doc(db, "patients_mhl", p.id));
+      await deleteDoc(doc(db, "patients", p.id));
     } catch (e) {
       alert("Delete failed: " + (e.code || e.message || "unknown error"));
       patientStatus = "";
@@ -303,7 +303,7 @@
               <tr>
                 <td style="text-align:left;cursor:pointer;" title={"Open " + (p.name || "this patient") + "'s overview"} onclick={() => openPatient(p)}>{p.name || "Unnamed"}</td>
                 <td style="cursor:pointer;" onclick={() => openPatient(p)}>{p.emr || "-"}</td>
-                <td style="cursor:pointer;" onclick={() => openPatient(p)}>{p.ward || "-"}</td>
+                <td style="cursor:pointer;" onclick={() => openPatient(p)}>{p.wardMhl || "-"}</td>
                 <td style="text-align:left;cursor:pointer;" onclick={() => openPatient(p)}>{p.diagnosis || "Not specified"}</td>
                 <td style="cursor:pointer;" onclick={() => openPatient(p)}>{p.admissionDate || "-"}</td>
                 <td>

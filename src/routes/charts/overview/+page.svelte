@@ -30,7 +30,7 @@
   $effect(() => {
     if (!patientId) { goto("/"); return; }
     patientError = null;
-    getDocSafe(doc(db, "patients_mhl", patientId)).then((snap) => {
+    getDocSafe(doc(db, "patients", patientId)).then((snap) => {
       if (!snap.exists()) { goto("/"); return; }
       patient = { id: snap.id, ...snap.data() };
     }).catch((e) => {
@@ -66,11 +66,11 @@
       const list = [];
       try {
         const [drugSnap, bgSnap, vitalsSnap, ioSnap, seizureSnap] = await Promise.all([
-          getDocSafe(doc(db, "patients_mhl", pid, "drugCourseChart", "main")),
-          getDocSafe(doc(db, "patients_mhl", pid, "bloodGlucose", "main")),
-          getDocsSafe(collection(db, "patients_mhl", pid, "vitals")),
-          getDocsSafe(collection(db, "patients_mhl", pid, "intakeOutput")),
-          getDocsSafe(collection(db, "patients_mhl", pid, "seizure"))
+          getDocSafe(doc(db, "patients", pid, "drugCourseChart", "main")),
+          getDocSafe(doc(db, "patients", pid, "bloodGlucose", "main")),
+          getDocsSafe(collection(db, "patients", pid, "vitals")),
+          getDocsSafe(collection(db, "patients", pid, "intakeOutput")),
+          getDocsSafe(collection(db, "patients", pid, "seizure"))
         ]);
 
         const drugData = drugSnap.exists() ? drugSnap.data() : null;
@@ -89,7 +89,7 @@
         }
 
         try {
-          const q = query(collection(db, "patients_mhl", pid, "admissions"), orderBy("archivedAt", "desc"));
+          const q = query(collection(db, "patients", pid, "admissions"), orderBy("archivedAt", "desc"));
           const snap = await getDocsSafe(q);
           snap.forEach(d => {
             const data = d.data();
@@ -101,7 +101,7 @@
             });
           });
         } catch (e) {
-          const snap = await getDocsSafe(collection(db, "patients_mhl", pid, "admissions"));
+          const snap = await getDocsSafe(collection(db, "patients", pid, "admissions"));
           const archived = [];
           snap.forEach(d => archived.push({ id: d.id, ...d.data() }));
           archived.sort((a, b) => (b.archivedAtDisplay || "").localeCompare(a.archivedAtDisplay || ""));
