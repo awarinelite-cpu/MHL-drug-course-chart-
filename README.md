@@ -90,15 +90,19 @@ npm run preview
   schedule/glycemic-reminder interval, shared `settings/alarm` Firestore
   doc), and Backup All Patients (on-demand full JSON export of every
   patient's active + archived admissions). Ported `alarm-settings.js`
-  verbatim into `src/lib/helpers/` (framework-agnostic) and split
-  `export.js`'s JSON-export half into `src/lib/helpers/export.js` — the PDF
-  half stays with the separate "PDF export" item below since nothing here
-  needs it yet.
+  verbatim into `src/lib/helpers/`.
+- **Overview** (`/charts/overview`) — per-patient admission history: the
+  active admission (if it has any data) plus every archived admission,
+  each linking into `/charts/admission`, and Export Full History as
+  PDF or JSON across the patient's whole record. This is what completed
+  `src/lib/helpers/export.js` — it now carries both halves of the original
+  `export.js` (JSON gathering, shared by Admin's backup, plus the full
+  jsPDF/jspdf-autotable report builder), so **PDF export is no longer a
+  separate not-yet-ported item.**
 
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): Overview, Admission, the Nurses Report
-section, PDF export, push notifications, the service worker, and the
-Capacitor Android wrapper.
+doesn't break): Admission, the Nurses Report section, push notifications,
+the service worker, and the Capacitor Android wrapper.
 
 **Intentionally deferred:** the Drug Course Chart's patient status-change
 flow (referred / transferred / discharged) — in the original this reads
