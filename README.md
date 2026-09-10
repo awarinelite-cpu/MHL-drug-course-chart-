@@ -81,14 +81,27 @@ npm run preview
   disabled placeholder here since push notifications/the service worker
   aren't ported yet (see below) — the original's toggle can't do anything
   useful without them.
+- **Admin** (`/admin`) — create-nurse-account (via a secondary Firebase app
+  so the admin's own session stays signed in), All Patients (filter +
+  destructive delete with typed-EMR confirmation, wiping every chart
+  subcollection first), All Users (subadmin toggle, delete via the
+  `deleteUserAccount` Cloud Function with typed-email confirmation),
+  Drug-Due Alarm Settings (sound/appearance/repeat/quiet-hours/per-frequency
+  schedule/glycemic-reminder interval, shared `settings/alarm` Firestore
+  doc), and Backup All Patients (on-demand full JSON export of every
+  patient's active + archived admissions). Ported `alarm-settings.js`
+  verbatim into `src/lib/helpers/` (framework-agnostic) and split
+  `export.js`'s JSON-export half into `src/lib/helpers/export.js` — the PDF
+  half stays with the separate "PDF export" item below since nothing here
+  needs it yet.
 
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): Admin, Overview, Admission, the Nurses Report
+doesn't break): Overview, Admission, the Nurses Report
 section, PDF export, push notifications, the service worker, and the
 Capacitor Android wrapper.
 
 **Intentionally deferred:** the Drug Course Chart's patient status-change
 flow (referred / transferred / discharged) — in the original this reads
-and archives Vitals, Glycemic, Intake & Output and Seizure charts together,
-none of which exist in this app yet. It's stubbed with a note in the UI
-until those pages are built.
+and archives Vitals, Glycemic, Intake & Output and Seizure charts together.
+Those four now all exist in this app, so the flow is unblocked, but it's
+still stubbed with a note in the UI pending its own pass.
