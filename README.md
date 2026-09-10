@@ -75,8 +75,15 @@ npm run preview
   `labs-data.js`) were ported verbatim — they're framework-agnostic JS,
   not React-specific.
 
+- **Profile** (`/profile`) — current-ward switcher, edit name/phone/gender
+  with the same avatar preview as the original, read-only email/role, and
+  change-password (reauthenticate + `updatePassword`). Dose Due Alerts is a
+  disabled placeholder here since push notifications/the service worker
+  aren't ported yet (see below) — the original's toggle can't do anything
+  useful without them.
+
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): Profile, Admin, Overview, Admission, the Nurses Report
+doesn't break): Admin, Overview, Admission, the Nurses Report
 section, PDF export, push notifications, the service worker, and the
 Capacitor Android wrapper.
 
