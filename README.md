@@ -100,8 +100,14 @@ npm run preview
   jsPDF/jspdf-autotable report builder), so **PDF export is no longer a
   separate not-yet-ported item.**
 
+- **Admission** (`/charts/admission`) — the hub page for one admission
+  (active or archived): diagnosis + status badge, Readmit action for a
+  discharged admission (guarded by an online check and a hasActiveData
+  check so it can't clobber a newer admission already in progress), the
+  five-chart grid, and per-admission Share/Print/Export (PDF/JSON).
+
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): Admission, the Nurses Report section, push notifications,
+doesn't break): the Nurses Report section, push notifications,
 the service worker, and the Capacitor Android wrapper.
 
 **Intentionally deferred:** the Drug Course Chart's patient status-change
