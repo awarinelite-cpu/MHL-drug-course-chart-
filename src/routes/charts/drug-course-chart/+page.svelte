@@ -13,7 +13,7 @@
     ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS, STATUS_LABELS, WARD_OPTIONS,
     actionColor, defaultRow, dueLabelFor, withDrugCompletionChecked, computeRouteFromSno,
     parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
-    diffFields, autoDurationForFrequency
+    diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText
   } from "$lib/helpers/drugChartHelpers.js";
 
   const FIELD_IDS = ["f_admission", "f_discharge", "f_diagnosis"];
@@ -672,85 +672,94 @@
 
 <Topbar brand="Drug Course Chart">
   <button class="btn btn-secondary no-print" onclick={goBack}>&larr; Back</button>
+  <button class="btn btn-primary no-print" onclick={() => window.print()}>Print</button>
 </Topbar>
 
-<div class="container">
-  {#if !loaded}
-    <div class="card-box"><div class="loading-note">Loading chart…</div></div>
-  {:else}
-    <div class="card-box">
-      {#if patient}
-        <div class="patient-banner">
-          <strong>{patient.name || "Unnamed patient"}</strong>
-          {#if patient.ward}<span> · {patient.ward}</span>{/if}
-        </div>
-      {/if}
-      {#if isArchived && archiveMeta}
-        <div class="no-print" style="background:#fef3c7;border:1px solid #f59e0b;color:#78350f;font-weight:bold;padding:8px 12px;border-radius:6px;margin-top:10px;font-size:13px;">
-          Archived chart — {archiveMeta.archiveReasonLabel || STATUS_LABELS[archiveMeta.archiveReason] || "Closed"}
-          {#if archiveMeta.archivedAtDisplay} on {archiveMeta.archivedAtDisplay}{/if}
-        </div>
-      {/if}
+<div class="container no-print">
+  {#if patient}
+    <div class="patient-banner">
+      <div>
+        <div class="pname">{patient.name || "Unnamed"}</div>
+        <div class="pmeta">EMR: {patient.emr || "N/A"}</div>
+      </div>
+    </div>
+  {/if}
+  {#if isArchived && archiveMeta}
+    <div style="background:#fef3c7;border:1px solid #f59e0b;color:#78350f;font-weight:bold;padding:8px 12px;border-radius:6px;margin-top:10px;font-size:13px;">
+      Archived chart — {archiveMeta.archiveReasonLabel || STATUS_LABELS[archiveMeta.archiveReason] || "Closed"}
+      {#if archiveMeta.archivedAtDisplay} on {archiveMeta.archivedAtDisplay}{/if}
+    </div>
+  {/if}
+  <div style="font-size:12px;color:#555;margin-top:8px;text-align:right;">{saveStatus}</div>
+</div>
 
-      <div class="save-status no-print" style="font-size:12px;color:#666;">{saveStatus}</div>
+{#if !loaded}
+  <div class="container"><div class="card-box"><div class="loading-note">Loading chart…</div></div></div>
+{:else}
+  <div class="sheet">
+    <div class="header"><h1>68 Nigerian Army Reference Hospital Yaba</h1></div>
+    <div class="header-sub"><h2>Drugs Course Chart</h2></div>
 
-      <div class="chart-fields" style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;">
-        <div class="field">
-          <label for="f_admission">Date of Admission</label>
-          <input id="f_admission" type="date" value={fields.f_admission} disabled={isArchived}
+    <div class="info-grid-wrap">
+      <div class="info-grid">
+        <div class="info-row"><label for="">NAME:</label><span class="val">{patient?.name || ""}</span></div>
+        <div class="info-row"><label for="">EMR:</label><span class="val">{patient?.emr || ""}</span></div>
+        <div class="info-row"><label for="">WARD:</label><span class="val">{patient?.ward || ""}</span></div>
+        <div class="info-row"><label for="">Hospital No:</label><span class="val">{patient?.hospNo || ""}</span></div>
+        <div class="info-row"><label for="">AGE:</label><span class="val">{patient?.age || ""}</span></div>
+        <div class="info-row">
+          <label for="f_admission">Date of Admission:</label>
+          <input id="f_admission" type="date" readonly={isArchived} value={fields.f_admission}
             onchange={(e) => updateField("f_admission", e.target.value)} />
         </div>
-        <div class="field">
-          <label for="f_discharge">Discharge Date</label>
-          <input id="f_discharge" type="date" value={fields.f_discharge} readonly disabled />
+        <div class="info-row">
+          <label for="">Diagnosis:</label>
+          <input type="text" placeholder="Enter diagnosis for this chart" readonly value={fields.f_diagnosis}
+            onclick={() => openDiagnosisModal(false)} />
         </div>
-        <div class="field" style="flex:1;min-width:220px;">
-          <label for="f_diagnosis">Diagnosis</label>
-          <button type="button" class="field-value-btn" style="width:100%;text-align:left;" onclick={() => openDiagnosisModal(false)}>
-            {fields.f_diagnosis ? (fields.f_diagnosis.length > 60 ? fields.f_diagnosis.slice(0, 60) + "…" : fields.f_diagnosis) : "(tap to enter)"}
-          </button>
+        <div class="info-row">
+          <label for="">Discharge Date:</label>
+          <input type="date" readonly value={fields.f_discharge}
+            title="Auto-filled when the patient is discharged — cannot be entered manually"
+            style="background:#f3f4f6;cursor:not-allowed;pointer-events:none;" />
         </div>
       </div>
+    </div>
 
-      <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-        <button class="btn btn-secondary" onclick={openVerbalModal}>Verbal Orders ({verbalOrders.length})</button>
-        <button class="btn btn-secondary" onclick={openCareModal}>
-          Care Instructions ({careInstructions.length}){#if careUnreadCount} <span class="badge">{careUnreadCount}</span>{/if}
-        </button>
-        <button class="btn btn-secondary" onclick={openAuditModal}>
-          Audit Log ({auditLog.length}){#if auditUnreadCount} <span class="badge">{auditUnreadCount}</span>{/if}
-        </button>
-      </div>
+    <div class="no-print" style="margin:-4px 0 14px;">
+      <button class="btn btn-secondary" style="position:relative;" onclick={openCareModal}>
+        {careInstructions.length ? "\uD83D\uDCAC Care Instructions (" + careInstructions.length + ")" : "+ Care Instructions"}
+        {#if careUnreadCount > 0}<span class="notif-badge">{careUnreadCount > 99 ? "99+" : careUnreadCount}</span>{/if}
+      </button>
+      <button class="btn btn-secondary" style="position:relative;" onclick={openAuditModal}>
+        {"\uD83D\uDD53 Audit Log" + (auditLog.length ? " (" + auditLog.length + ")" : "")}
+        {#if auditUnreadCount > 0}<span class="notif-badge">{auditUnreadCount > 99 ? "99+" : auditUnreadCount}</span>{/if}
+      </button>
+    </div>
 
-      <!-- Drugs table -->
+    <div class="drugs-block">
       <h3>Drugs</h3>
-      <div class="no-print" style="display:flex;gap:8px;margin-bottom:8px;">
-        {#if !isArchived}
-          {#if !drugsEditMode}
-            <button class="btn btn-primary" onclick={enterDrugsEditMode}>Edit Drugs</button>
-            <button class="btn btn-secondary" onclick={openBulkModal}>Bulk Upload</button>
-          {:else}
-            <button class="btn btn-success" onclick={exitDrugsEditMode}>Done Editing</button>
-            <button class="btn btn-secondary" onclick={addDrug}>+ Add Drug</button>
-          {/if}
-        {/if}
-      </div>
-      <div style="overflow-x:auto;">
-        <table class="drug-course-table">
+      <div class="table-wrap">
+        <table class="drugs-table">
           <thead>
             <tr>
-              <th>#</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th>Due</th>
-              {#if drugsEditMode}<th class="no-print"></th>{/if}
+              {#if drugsEditMode}<th class="col-rowedit no-print"></th>{/if}
+              <th style="width:34px;">No.</th><th class="col-drugname">Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th>
+              <th class="no-print">Due</th>
+              {#if drugsEditMode}<th class="no-print" style="width:34px;"></th>{/if}
             </tr>
           </thead>
           <tbody>
             {#each drugs as drug, i (i)}
               {@const due = dueLabelFor(drug, i, chartRows, now)}
               {@const seq = parseDoseSequence(drug.frequency)}
-              <tr>
-                <td>{i + 1}</td>
-                {#if drugsEditMode && editingDrugRows[i]}
-                  <td><input type="text" value={drug.name} oninput={(e) => updateDrug(i, { name: e.target.value })} /></td>
+              {@const editing = drugsEditMode && editingDrugRows[i]}
+              {@const showPencil = drugsEditMode && !editing}
+              {#if editing}
+                <tr>
+                  <td class="col-rowedit no-print"><button class="row-lock-btn" title="Done editing this row" onclick={() => lockDrugRow(i)}>&#10003;</button></td>
+                  <td>{i + 1}</td>
+                  <td class="col-drugname"><input type="text" value={drug.name || ""} oninput={(e) => updateDrug(i, { name: e.target.value })} /></td>
                   <td>
                     <select value={drug.route || ""} onchange={(e) => updateDrug(i, { route: e.target.value })}>
                       {#each ROUTE_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
@@ -769,15 +778,29 @@
                     {/if}
                   </td>
                   <td>
-                    <select value={drug.action || ""} onchange={(e) => updateDrug(i, { action: e.target.value })}>
+                    <select value={drug.action || ""} onchange={(e) => updateDrug(i, { action: e.target.value })}
+                      style={drug.action ? "background:" + actionColor(drug.action) + ";color:#fff;font-weight:bold;" : ""}>
                       {#each ACTION_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
                     </select>
                   </td>
-                  <td><input type="text" value={drug.duration} oninput={(e) => updateDrug(i, { duration: e.target.value })} /></td>
-                  <td style="color:{due.overdue ? '#dc2626' : '#555'};font-size:12px;">{due.text}</td>
-                  <td class="no-print"><button class="remove-drug-btn" onclick={() => { lockDrugRow(i); removeDrug(i); }}>x</button></td>
-                {:else}
-                  <td>{drug.name}
+                  <td>
+                    <input type="text" placeholder="e.g. 3/7 or 5 days" value={drug.duration || ""} oninput={(e) => {
+                      const val = e.target.value;
+                      const patch = { duration: val };
+                      if (val && !drug.startDate) patch.startDate = new Date().toISOString().slice(0, 10);
+                      updateDrug(i, patch);
+                    }} />
+                  </td>
+                  <td class="no-print" style={due.overdue ? "color:#dc2626;font-weight:bold;" : due.skippedPending ? "color:#d97706;font-weight:bold;" : ""}
+                    title={due.skippedPending ? "Last due dose was documented as not given" : undefined}>{due.text}</td>
+                  <td class="no-print"><button class="remove-drug-btn" onclick={() => removeDrug(i)}>x</button></td>
+                </tr>
+              {:else}
+                <tr>
+                  {#if showPencil}<td class="col-rowedit no-print"><button class="row-edit-btn" title="Edit this row" onclick={() => unlockDrugRow(i)}>&#128394;</button></td>{/if}
+                  <td>{i + 1}</td>
+                  <td class="col-drugname">
+                    {drug.name || "—"}
                     {#if seq}
                       <div class="dose-seq-badges">
                         {#each seq as hr, idx}
@@ -787,99 +810,133 @@
                       </div>
                     {/if}
                   </td>
-                  <td>{drug.route}</td>
-                  <td>{drug.frequency}</td>
-                  <td><span style="color:{actionColor(drug.action)};font-weight:600;">{drug.action || "—"}</span></td>
-                  <td>{drug.duration}</td>
-                  <td style="color:{due.overdue ? '#dc2626' : '#555'};font-size:12px;">{due.text}</td>
-                  {#if drugsEditMode}<td class="no-print"><button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => unlockDrugRow(i)}>Edit</button></td>{/if}
-                {/if}
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Chart rows table -->
-      <h3 style="margin-top:24px;">Administration Chart</h3>
-      <div class="no-print" style="display:flex;gap:8px;margin-bottom:8px;">
-        {#if !isArchived}
-          {#if !chartEditMode}
-            <button class="btn btn-primary" onclick={enterChartEditMode}>Edit Chart</button>
-          {:else}
-            <button class="btn btn-success" onclick={exitChartEditMode}>Done Editing</button>
-            <button class="btn btn-secondary" onclick={() => addChartRow(5)}>+ 5 Rows</button>
-            <button class="btn btn-secondary" onclick={removeChartRow}>Remove Last Row</button>
-          {/if}
-        {/if}
-      </div>
-      <div style="overflow-x:auto;">
-        <table class="drug-course-table">
-          <thead>
-            <tr><th>Date</th><th>Drug S/N</th><th>Time</th><th>Dose</th><th>Route</th><th>Nurse</th><th>Remark</th></tr>
-          </thead>
-          <tbody>
-            {#each chartRows as row, i (i)}
-              <tr>
-                {#if chartEditMode && editingChartRows[i]}
-                  <td><input type="date" value={row.date} onchange={(e) => updateChartRow(i, { date: e.target.value })} /></td>
-                  <td>
-                    <button class="field-value-btn" onclick={() => openSnoPicker(i)}>{row.sno || (row.skipped?.length ? row.skipped.map(s => s.num).join(", ") + " (not given)" : "Select…")}</button>
-                  </td>
-                  <td><input type="time" value={row.time} onchange={(e) => updateChartRow(i, { time: e.target.value })} /></td>
-                  <td><input type="text" value={row.dose} oninput={(e) => updateChartRow(i, { dose: e.target.value })} style="width:48px;" /></td>
-                  <td><input type="text" value={row.route} oninput={(e) => updateChartRow(i, { route: e.target.value })} style="width:60px;" /></td>
-                  <td>{row.nurse}</td>
-                  <td><input type="text" value={row.remark} oninput={(e) => updateChartRow(i, { remark: e.target.value })} /></td>
-                {:else}
-                  <td>{row.date}</td>
-                  <td>
-                    {row.sno}
-                    {#if row.skipped?.length}
-                      <button class="field-value-btn" style="color:#dc2626;font-size:11px;"
-                        onclick={() => skipReasonPopup = { nums: row.skipped.map(s => s.num), reason: row.skipped.map(s => s.reason).join("; ") }}>
-                        {row.skipped.map(s => s.num).join(",")} not given
-                      </button>
-                    {/if}
-                  </td>
-                  <td>{row.time}</td>
-                  <td>{row.dose}</td>
-                  <td>{row.route}</td>
-                  <td>{row.nurse}</td>
-                  <td>{row.remark}</td>
-                  {#if chartEditMode}<td class="no-print"><button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick={() => unlockChartRow(i)}>Edit</button></td>{/if}
-                {/if}
-              </tr>
+                  <td>{drug.route || "—"}</td>
+                  <td>{drug.frequency || "—"}</td>
+                  <td>{#if drug.action}<span style={"display:inline-block;padding:2px 8px;border-radius:10px;color:#fff;font-size:11px;font-weight:bold;background:" + actionColor(drug.action) + ";"}>{drug.action}</span>{:else}—{/if}</td>
+                  <td>{drug.duration || "—"}</td>
+                  <td class="no-print" style={due.overdue ? "color:#dc2626;font-weight:bold;" : due.skippedPending ? "color:#d97706;font-weight:bold;" : ""}
+                    title={due.skippedPending ? "Last due dose was documented as not given" : undefined}>{due.text}</td>
+                  {#if showPencil}<td class="no-print"></td>{/if}
+                </tr>
+              {/if}
             {/each}
           </tbody>
         </table>
       </div>
 
       {#if !isArchived}
-        <div class="no-print" style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e7eb;">
-          <label style="font-weight:bold;font-size:13px;display:block;margin-bottom:6px;">Patient Status</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <select style="width:auto;min-width:220px;" value={statusAction}
-              onchange={(e) => { statusAction = e.target.value; if (e.target.value !== "transferred") transferWard = ""; }}>
-              <option value="">Select action…</option>
-              <option value="referred">Referred to another hospital</option>
-              <option value="transferred">Transferred to another ward</option>
-              <option value="discharged">Discharged</option>
-            </select>
-            {#if statusAction === "transferred"}
-              <select style="width:auto;min-width:220px;" value={transferWard} onchange={(e) => transferWard = e.target.value}>
-                <option value="">Select ward…</option>
-                {#each WARD_OPTIONS as w}<option value={w}>{w}</option>{/each}
-              </select>
-            {/if}
-            <button class="btn btn-primary" style="padding:8px 14px;font-size:13px;" disabled={statusApplying} onclick={applyStatusAction}>Apply</button>
-          </div>
-          {#if statusMsg.text}<div style="font-size:12px;margin-top:8px;color:{statusMsg.color};">{statusMsg.text}</div>{/if}
+        <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;">
+          {#if !drugsEditMode}
+            <button class="btn btn-purple" onclick={enterDrugsEditMode}>Edit</button>
+          {:else}
+            <button class="btn btn-success" onclick={exitDrugsEditMode}>Save</button>
+          {/if}
+          {#if drugsEditMode}
+            <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" onclick={openVerbalModal}>
+              {verbalOrders.length ? "\uD83D\uDCAC Verbal Order (" + verbalOrders.length + ")" : "+ Verbal Order"}
+            </button>
+            <button class="btn btn-secondary" onclick={addDrug}>+ Add Drug</button>
+            <button class="btn btn-secondary" onclick={openBulkModal}>+ Bulk Upload</button>
+          {/if}
         </div>
       {/if}
     </div>
-  {/if}
-</div>
+
+    <div class="table-wrap">
+      <table class="chart">
+        <thead>
+          <tr>
+            {#if chartEditMode}<th class="col-rowedit no-print"></th>{/if}
+            <th class="col-date">Date</th><th class="col-sno">Drug S/N</th><th class="col-time">Time</th>
+            <th class="col-dose">Dose</th><th class="col-route">Route</th><th class="col-nurse">Nurses Name</th><th class="col-remark">Remark</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each chartRows as row, i (i)}
+            {@const editing = chartEditMode && editingChartRows[i]}
+            {@const showPencil = chartEditMode && !editing}
+            {#if editing}
+              <tr>
+                <td class="col-rowedit no-print"><button class="row-lock-btn" title="Done editing this row" onclick={() => lockChartRow(i)}>&#10003;</button></td>
+                <td class="col-date"><input type="date" value={row.date || ""} onchange={(e) => updateChartRow(i, { date: e.target.value })} /></td>
+                <td class="col-sno"><button type="button" class="sno-picker-btn" onclick={() => openSnoPicker(i)}>
+                  <span class="sno-picker-text">{buildSnoText(row.sno, row.skipped) || "Select drug(s)"}</span>
+                  <span class="sno-picker-caret">&#9662;</span>
+                </button></td>
+                <td class="col-time"><input type="time" value={row.time || ""} onchange={(e) => updateChartRow(i, { time: e.target.value })} /></td>
+                <td class="col-dose"><input type="text" value={row.dose || "AP"} oninput={(e) => updateChartRow(i, { dose: e.target.value })} /></td>
+                <td class="col-route"><input type="text" value={row.route || ""} oninput={(e) => updateChartRow(i, { route: e.target.value })} /></td>
+                <td class="col-nurse"><input type="text" readonly value={row.nurse || ""} /></td>
+                <td class="col-remark"><input type="text" value={row.remark || ""} oninput={(e) => updateChartRow(i, { remark: e.target.value })} /></td>
+              </tr>
+            {:else}
+              {@const segs = buildSnoSegments(row.sno, row.skipped)}
+              {@const givenSegs = segs.filter((s) => s.type === "given")}
+              {@const skipSegs = segs.filter((s) => s.type === "skip")}
+              <tr>
+                {#if showPencil}<td class="col-rowedit no-print"><button class="row-edit-btn" title="Edit this row" onclick={() => unlockChartRow(i)}>&#128394;</button></td>{/if}
+                <td class="col-date view-cell">{row.date || "\u00A0"}</td>
+                <td class="col-sno view-cell">
+                  {#if !segs.length}
+                    {"\u00A0"}
+                  {:else}
+                    {#each givenSegs as s, idx}<span>{s.text}</span>{/each}
+                    {#if givenSegs.length > 0 && skipSegs.length > 0}<br />{/if}
+                    {#each skipSegs as s, idx}
+                      <span class="sno-skip-text sno-skip-tap" onclick={() => skipReasonPopup = { nums: s.nums, reason: s.fullReason }}>
+                        {(idx > 0 ? ". " : "") + s.text}
+                      </span>
+                    {/each}
+                  {/if}
+                </td>
+                <td class="col-time view-cell">{row.time || "\u00A0"}</td>
+                <td class="col-dose view-cell">{row.dose || "AP"}</td>
+                <td class="col-route view-cell">{row.route || "\u00A0"}</td>
+                <td class="col-nurse view-cell">{row.nurse || "\u00A0"}</td>
+                <td class="col-remark view-cell">{row.remark || "\u00A0"}</td>
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
+    </div>
+
+    {#if !isArchived}
+      <div class="no-print" style="margin-top:10px;">
+        {#if !chartEditMode}
+          <button class="btn btn-purple" onclick={enterChartEditMode}>Edit</button>
+        {:else}
+          <button class="btn btn-success" onclick={exitChartEditMode}>Save</button>
+          <button class="btn btn-success" onclick={() => addChartRow(1)}>+ Add Row</button>
+          <button class="btn btn-secondary" onclick={removeChartRow}>&minus; Remove Row</button>
+        {/if}
+      </div>
+    {/if}
+
+    {#if !isArchived}
+      <div class="no-print" style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e7eb;">
+        <label style="font-weight:bold;font-size:13px;display:block;margin-bottom:6px;">Patient Status</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select style="width:auto;min-width:220px;" value={statusAction}
+            onchange={(e) => { statusAction = e.target.value; if (e.target.value !== "transferred") transferWard = ""; }}>
+            <option value="">Select action…</option>
+            <option value="referred">Referred to another hospital</option>
+            <option value="transferred">Transferred to another ward</option>
+            <option value="discharged">Discharged</option>
+          </select>
+          {#if statusAction === "transferred"}
+            <select style="width:auto;min-width:220px;" value={transferWard} onchange={(e) => transferWard = e.target.value}>
+              <option value="">Select ward…</option>
+              {#each WARD_OPTIONS as w}<option value={w}>{w}</option>{/each}
+            </select>
+          {/if}
+          <button class="btn btn-primary" style="padding:8px 14px;font-size:13px;" disabled={statusApplying} onclick={applyStatusAction}>Apply</button>
+        </div>
+        {#if statusMsg.text}<div style="font-size:12px;margin-top:8px;color:{statusMsg.color};">{statusMsg.text}</div>{/if}
+      </div>
+    {/if}
+  </div>
+{/if}
 
 <!-- Diagnosis modal -->
 {#if diagModalOpen}
