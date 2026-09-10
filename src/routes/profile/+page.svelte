@@ -2,10 +2,7 @@
   // Ported from src/pages/Profile.jsx. useAuth()'s user/profile/logout become
   // authState (see $lib/stores/auth.svelte.js); useNavigate/useGoBack become
   // goto()/window.history.back(), matching the pattern already used on
-  // My Patients and Patient. Dose Due Alerts (push.js) aren't ported yet —
-  // push notifications and the service worker are still on the "not yet
-  // ported" list in the README, so that card is a disabled placeholder for
-  // now instead of a broken toggle.
+  // My Patients and Patient.
   import { goto } from "$app/navigation";
   import { doc, updateDoc } from "firebase/firestore";
   import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
@@ -13,7 +10,16 @@
   import { authState } from "$lib/stores/auth.svelte.js";
   import { avatarMarkup } from "$lib/helpers/avatar.js";
   import { WARD_OPTIONS } from "$lib/helpers/drugChartHelpers.js";
+  import { pushIsEnabled, enablePushForThisDevice, disablePushForThisDevice, isNativePlatform } from "$lib/helpers/push.js";
   import Topbar from "$lib/components/Topbar.svelte";
+
+  function withTimeout(promise, ms) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Timed out — check your internet connection and try again.")), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
 
   function goBack() {
     if (window.history.length > 1) window.history.back();
@@ -36,6 +42,30 @@
   /** @type {{type: 'error'|'info', text: string} | null} */
   let wardMsg = $state(null);
 
+  /** @type {'loading'|'unsupported'|'blocked'|'on'|'off'} */
+  let pushState = $state("loading");
+  let pushBusy = $state(false);
+  /** @type {{type: 'error'|'info', text: string} | null} */
+  let pushMsg = $state(null);
+
+  // In a Capacitor-wrapped native app, push goes through the
+  // PushNotifications plugin (see enablePushNative in $lib/helpers/push.js),
+  // not the browser's window.Notification API — which genuinely doesn't
+  // exist in that WebView. Checking for it first would wrongly report
+  // "unsupported" on every native install, even though native push is
+  // exactly what that build is for. (No Capacitor wrapper exists for this
+  // Svelte build yet, so this branch is currently unreachable but kept so
+  // this function doesn't need touching again once one does.)
+  function refreshPushState() {
+    if (isNativePlatform()) {
+      pushState = pushIsEnabled() ? "on" : "off";
+      return;
+    }
+    if (!("Notification" in window)) { pushState = "unsupported"; return; }
+    if (Notification.permission === "denied") { pushState = "blocked"; return; }
+    pushState = pushIsEnabled() ? "on" : "off";
+  }
+
   // Keep the edit fields in sync if the profile loads/changes after mount
   // (e.g. auth resolves after this page has already rendered once).
   $effect(() => {
@@ -45,6 +75,30 @@
       gender = authState.profile.gender || "";
     }
   });
+
+  $effect(() => { refreshPushState(); });
+
+  async function togglePush() {
+    pushBusy = true;
+    pushMsg = { type: "info", text: "Working…" };
+    try {
+      if (pushIsEnabled()) {
+        pushMsg = { type: "info", text: "Turning off…" };
+        await withTimeout(disablePushForThisDevice(authState.user.uid), 60000);
+        pushMsg = { type: "info", text: "Dose alerts are now off for this phone." };
+      } else {
+        await withTimeout(
+          enablePushForThisDevice(authState.user.uid, (label) => { pushMsg = { type: "info", text: label }; }),
+          60000
+        );
+        pushMsg = { type: "info", text: "Dose alerts are on for this phone." };
+      }
+    } catch (e) {
+      pushMsg = { type: "error", text: e.message || "Could not update alert settings." };
+    }
+    pushBusy = false;
+    refreshPushState();
+  }
 
   async function handleLogout() {
     await authState.logout();
@@ -171,12 +225,17 @@
 
     <div class="card-box">
       <h3 style="margin-top:0;">Dose Due Alerts</h3>
-      <button class="btn btn-primary" disabled title="Coming soon — push notifications aren't wired up in this build yet.">
-        Not available in this build yet
+      <button id="pushToggleBtn" class={"btn btn-primary " + (pushState === "on" ? "push-on" : ((pushState === "off" || pushState === "blocked") ? "push-off" : ""))}
+        disabled={pushBusy || pushState === "unsupported" || pushState === "blocked"} onclick={togglePush}>
+        {#if pushState === "loading"}Loading…
+        {:else if pushState === "unsupported"}Not supported on this browser
+        {:else if pushState === "blocked"}Blocked — enable in browser settings
+        {:else if pushState === "on"}Alerts On — Tap to Turn Off
+        {:else}Turn On Dose Alerts{/if}
       </button>
-      <div class="info-msg" style="margin-top:10px;">
-        Dose Due Alerts need push notifications and a service worker, which haven't been ported to this app yet.
-      </div>
+      {#if pushMsg}
+        <div class={pushMsg.type === "error" ? "error-msg" : "info-msg"} style="margin-top:10px;">{pushMsg.text}</div>
+      {/if}
     </div>
 
     <div class="card-box">

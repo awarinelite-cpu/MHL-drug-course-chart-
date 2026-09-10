@@ -116,12 +116,15 @@ npm run preview
   `useWardReport.svelte.js` helpers as Ward Nurse and Archive View, so
   overrides and Firestore doc shapes match everywhere.
 
+- **Drug Course Chart — Patient Status** (referred / transferred / discharged):
+  ported onto the same Vitals/Blood Glucose/Intake & Output/Seizure data this
+  app already has. Transfer parks the patient in a `pendingTransfer` for the
+  receiving ward to accept (`$lib/helpers/wardTransfer.js`); refer/discharge
+  archives all five charts into one `admissions` doc (same shape Overview and
+  Admission already expect) and blanks the live charts for a fresh admission.
+  Blocked offline for refer/discharge (needs the real server data, not the
+  local cache) the same way the original is.
+
 **Not yet ported** (placeholder pages, linked from the nav so routing
 doesn't break): push notifications and the service worker (dose-due
 alerts), and the Capacitor Android wrapper.
-
-**Intentionally deferred:** the Drug Course Chart's patient status-change
-flow (referred / transferred / discharged) — in the original this reads
-and archives Vitals, Glycemic, Intake & Output and Seizure charts together.
-Those four now all exist in this app, so the flow is unblocked, but it's
-still stubbed with a note in the UI pending its own pass.

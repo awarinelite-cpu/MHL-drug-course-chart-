@@ -1,0 +1,160 @@
+// App-shell offline cache. This does NOT cache Firestore/Auth traffic — that's
+// handled by Firestore's own IndexedDB persistence (see src/firebase.js), which
+// queues writes made while offline and syncs them automatically on reconnect.
+// This service worker's other job is background FCM push messages (drug-due
+// alerts, see src/lib/push.js) — that's the compat-SDK block below. Kept in
+// this same file, rather than a separate firebase-messaging-sw.js, so there's
+// only one service worker registered for the whole site.
+
+// Self-hosted rather than pulled from gstatic.com: importScripts() runs at
+// service worker evaluation time, so if that fetch fails (spotty ward wifi, a
+// network that blocks Google CDN domains, an ad/content blocker) the whole
+// worker fails to install with a bare "ServiceWorker script evaluation
+// failed" and push/offline support silently breaks. Bundling these locally
+// removes that external dependency entirely.
+importScripts('/vendor/firebase/firebase-app-compat.js');
+importScripts('/vendor/firebase/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "AIzaSyBLEzC5MusezdNS8RnDQQA8xoI7XbXEqiM",
+  authDomain: "gen-lang-client-0406053716.firebaseapp.com",
+  projectId: "gen-lang-client-0406053716",
+  storageBucket: "gen-lang-client-0406053716.firebasestorage.app",
+  messagingSenderId: "922657172970",
+  appId: "1:922657172970:web:f7a5c8f6ce8bb536d0d693"
+});
+
+// Written without optional chaining (?.) or other very-recent syntax on
+// purpose: this whole file has to be parsed successfully before ANY of it
+// runs, on ANY browser that loads it, or the entire service worker fails
+// evaluation with an unhelpful generic error — an ordinary try/catch can't
+// protect against that since it's a parse-time failure, not a runtime one.
+try {
+  firebase.messaging().onBackgroundMessage(function (payload) {
+    // Sends from functions/index.js are data-only on purpose (no top-level
+    // `notification` field) precisely so this handler always runs instead
+    // of the browser auto-displaying the notification itself — see the
+    // comment on the drug-due send in functions/index.js. title/body live
+    // under `data` here, not `payload.notification`.
+    var d = payload.data || {};
+    var title = d.title || 'Drug due';
+    var body = d.body || '';
+    var link = d.link || '/';
+    self.registration.showNotification(title, {
+      body: body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { link: link },
+      tag: d.tag || undefined, // same tag replaces an older, now-stale alert instead of stacking
+      // Browsers/OSes don't let a background service worker play a custom
+      // sound — only the app's own foreground tab can (see src/lib/push.js),
+      // which covers the phone-in-hand case. For phone-locked/app-closed,
+      // requireInteraction keeps the notification pinned and vibrate gives a
+      // distinct, longer buzz than a default notification's single blip.
+      // Both are still silenced by phone-level silent/DND settings.
+      requireInteraction: true,
+      vibrate: [400, 200, 400, 200, 400, 200, 400]
+    });
+  });
+} catch (e) {
+  console.warn('Background push messaging unavailable on this device/browser:', e);
+}
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  var data = event.notification.data || {};
+  var link = data.link || '/';
+  event.waitUntil(clients.openWindow(link));
+});
+
+// CACHE_NAME and PRECACHE_URLS below are placeholders overwritten by
+// scripts/generate-sw-precache.mjs (runs as the build's postbuild step) —
+// it fills PRECACHE_URLS with every hashed JS/CSS/asset file Vite just
+// produced, so the full app shell is cached at install time instead of
+// trickling in one URL at a time as the nurse happens to visit each page.
+// If you're reading this in public/sw.js (source, not dist/sw.js) these
+// are just the safe fallback values used in dev (`vite dev` — see below).
+const CACHE_NAME = 'narhy-app-shell-v5';
+const PRECACHE_URLS = ['/', '/index.html', '/manifest.json'];
+
+// Broadcasts caching progress to every open tab so the UI (see
+// src/components/OfflineCacheStatus.jsx) can show a small "Caching for
+// offline use… / Ready for offline use" indicator instead of leaving nurses
+// to guess whether it's safe to go offline yet.
+function broadcast(msg) {
+  self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((list) => {
+    list.forEach((client) => client.postMessage(msg));
+  });
+}
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    (async () => {
+      broadcast({ type: 'PRECACHE_PROGRESS', cached: 0, total: PRECACHE_URLS.length, cacheName: CACHE_NAME });
+      const cache = await caches.open(CACHE_NAME);
+      let done = 0;
+      let failed = 0;
+      // cache.addAll() aborts the whole batch on a single failed file (e.g.
+      // one asset briefly unreachable) — caching each file individually
+      // means one bad file doesn't take the rest of the offline shell down
+      // with it, and lets progress be reported as files complete.
+      await Promise.all(PRECACHE_URLS.map(async (url) => {
+        try {
+          const res = await fetch(url, { cache: 'no-cache' });
+          if (res && res.ok) await cache.put(url, res);
+          else failed++;
+        } catch (e) {
+          failed++;
+        }
+        done++;
+        broadcast({ type: 'PRECACHE_PROGRESS', cached: done, total: PRECACHE_URLS.length, cacheName: CACHE_NAME });
+      }));
+      broadcast({ type: 'PRECACHE_DONE', cached: done - failed, total: PRECACHE_URLS.length, failed, cacheName: CACHE_NAME });
+    })()
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((names) => Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))))
+      .then(() => self.clients.claim())
+      .then(() => broadcast({ type: 'PRECACHE_ACTIVE', cacheName: CACHE_NAME }))
+  );
+});
+
+// Lets a freshly opened tab (whose page load happened before it heard the
+// install-time broadcast above, or which reconnected to an already-cached
+// worker from a previous session) ask "is the offline shell ready?" instead
+// of showing "checking…" forever.
+self.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'CHECK_CACHE_STATUS') return;
+  event.waitUntil(
+    caches.has(CACHE_NAME).then((has) => {
+      if (event.source) event.source.postMessage({ type: 'PRECACHE_STATUS', ready: has, cacheName: CACHE_NAME });
+    })
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return; // never intercept writes
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // let Firebase/Firestore/CDN traffic go straight to the network
+
+  // Navigations (route changes in the SPA) always fall back to the cached
+  // index.html shell when offline, so client-side routing keeps working.
+  const isNavigation = req.mode === 'navigate';
+
+  event.respondWith(
+    fetch(req)
+      .then((res) => {
+        const resClone = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(req).then((cached) => cached || (isNavigation ? caches.match('/index.html') : undefined)))
+  );
+});

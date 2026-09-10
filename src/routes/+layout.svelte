@@ -1,12 +1,29 @@
 <script>
+  import { onMount } from "svelte";
   import "../lib/styles.css";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { authState } from "$lib/stores/auth.svelte.js";
   import { themeState } from "$lib/stores/theme.svelte.js";
   import NavDrawer from "$lib/components/NavDrawer.svelte";
+  import { initForegroundAlertsIfEnabled } from "$lib/helpers/push.js";
 
   let { children } = $props();
+
+  // Ported from useServiceWorker.js + useForegroundAlerts.js — both ran
+  // once for the whole app in React's App.jsx, so both live here in the
+  // root layout rather than on any one page. A page load with no foreground
+  // listener registered means an FCM push that arrives while this tab is
+  // open and focused has nothing to catch it (see $lib/helpers/push.js) —
+  // background alerts still work via static/sw.js regardless.
+  onMount(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        // Non-fatal — the app still works online, it just won't have an offline app shell.
+      });
+    }
+    initForegroundAlertsIfEnabled().catch(() => {});
+  });
 
   const isLoginRoute = $derived(page.url.pathname === "/login");
 
