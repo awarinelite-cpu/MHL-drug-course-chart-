@@ -9,7 +9,9 @@
     if (code.includes("user-not-found") || code.includes("invalid-credential") || code.includes("wrong-password")) return "Incorrect email or password.";
     if (code.includes("too-many-requests")) return "Too many attempts. Please try again later.";
     if (code.includes("invalid-email")) return "Enter a valid email address.";
-    return "Something went wrong. Please try again.";
+    // TEMP: surfacing the raw code so we can diagnose the Vercel deploy —
+    // remove this line once login is confirmed working end-to-end.
+    return "Something went wrong (" + (code || e.message || "no code") + "). Please try again.";
   }
 
   let email = $state("");
