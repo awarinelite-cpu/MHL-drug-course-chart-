@@ -229,7 +229,7 @@ function addTable(pdf, y, head, body, opts) {
 function addPatientHeader(pdf, record) {
   const p = record.patient;
   pdf.setFont(undefined, "bold"); pdf.setFontSize(15);
-  pdf.text("68 NARHY Ward Charts — Patient Record", PAGE_LEFT, 42);
+  pdf.text("MILITARY HOSPITAL LAGOS Ward Charts — Patient Record", PAGE_LEFT, 42);
   pdf.setFont(undefined, "normal"); pdf.setFontSize(8.5); pdf.setTextColor(90);
   pdf.text("Exported " + record.exportedAt.toLocaleString() + (record.exportedBy ? " by " + record.exportedBy : ""), PAGE_LEFT, 55);
   pdf.setTextColor(0);

@@ -39,7 +39,7 @@
 <div class={"gnav-overlay no-print" + (navState.open ? " gnav-open" : "")} onclick={navState.closeDrawer}></div>
 <div class={"gnav-drawer no-print" + (navState.open ? " gnav-open" : "")}>
   <div class="gnav-drawer-head">
-    <span>68 NARHY Ward Charts</span>
+    <span>MILITARY HOSPITAL LAGOS Ward Charts</span>
     <button class="gnav-drawer-close" aria-label="Close menu" onclick={navState.closeDrawer}>&times;</button>
   </div>
   <div class="gnav-who">{authState.profile ? authState.profile.name + " (" + authState.profile.role + ")" : ""}</div>

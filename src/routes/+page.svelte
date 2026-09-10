@@ -351,7 +351,7 @@
   function focusSearch() { searchInputEl && searchInputEl.focus(); }
 </script>
 
-<Topbar brand="68 NARHY Ward Charts">
+<Topbar brand="MILITARY HOSPITAL LAGOS Ward Charts">
   <a class="whoami-link" onclick={(e) => { e.preventDefault(); goto("/profile"); }} href="/profile">
     <span class="whoami-avatar">{@html authState.profile ? avatarMarkup(authState.profile, 32) : ""}</span>
     <span class="whoami-name">{authState.profile ? authState.profile.name + " (" + authState.profile.role + ")" : ""}</span>

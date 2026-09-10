@@ -1,6 +1,6 @@
 {
   "appId": "com.narhy.wardcharts",
-  "appName": "68 NARHY Ward Charts",
+  "appName": "MILITARY HOSPITAL LAGOS Ward Charts",
   "webDir": "build",
   "plugins": {
     "PushNotifications": {

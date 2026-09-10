@@ -697,7 +697,7 @@
   <div class="container"><div class="card-box"><div class="loading-note">Loading chart…</div></div></div>
 {:else}
   <div class="sheet">
-    <div class="header"><h1>68 Nigerian Army Reference Hospital Yaba</h1></div>
+    <div class="header"><h1>MILITARY HOSPITAL LAGOS</h1></div>
     <div class="header-sub"><h2>Drugs Course Chart</h2></div>
 
     <div class="info-grid-wrap">

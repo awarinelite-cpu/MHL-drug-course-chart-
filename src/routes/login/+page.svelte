@@ -46,7 +46,7 @@
 <div class="login-page" style="background-image:url({wardBg})">
   <div class="container" style="max-width:420px;margin-top:60px;">
     <div class="card-box login-card">
-      <h2 style="text-align:center;margin-top:0;">68 NARHY Ward Charts</h2>
+      <h2 style="text-align:center;margin-top:0;">MILITARY HOSPITAL LAGOS Ward Charts</h2>
 
       <div class="field">
         <label for="login-email">Email</label>

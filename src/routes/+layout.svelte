@@ -94,7 +94,7 @@
 </script>
 
 <svelte:head>
-  <title>68 NARHY Ward Charts</title>
+  <title>MILITARY HOSPITAL LAGOS Ward Charts</title>
 </svelte:head>
 
 <OfflineBanner />

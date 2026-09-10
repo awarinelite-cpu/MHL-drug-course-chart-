@@ -1,7 +1,7 @@
 # MHL Drug Course Chart — Svelte rebuild
 
 This is a SvelteKit rebuild of the original React app (`68-drug-course`), a
-patient ward-charting app for 68 NARHY, being ported over page by page.
+patient ward-charting app for MILITARY HOSPITAL LAGOS, being ported over page by page.
 
 ## Stack
 
