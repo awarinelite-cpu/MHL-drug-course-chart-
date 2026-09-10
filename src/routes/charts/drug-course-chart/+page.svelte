@@ -13,7 +13,7 @@
     ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS, STATUS_LABELS, WARD_OPTIONS,
     actionColor, defaultRow, dueLabelFor, withDrugCompletionChecked, computeRouteFromSno,
     parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
-    diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText
+    diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText, abbreviateReason
   } from "$lib/helpers/drugChartHelpers.js";
 
   const FIELD_IDS = ["f_admission", "f_discharge", "f_diagnosis"];
@@ -991,21 +991,34 @@
     <div class="modal-box">
       <div class="modal-header"><h3>Select Drug(s) Given</h3><button class="modal-close" onclick={closeSnoPicker}>&times;</button></div>
       <div class="modal-body">
+        {#if activeDrugNumbers().length === 0}
+          <p style="color:#777;font-size:13px;margin:0;">No active drugs on this chart yet.</p>
+        {/if}
         {#each activeDrugNumbers() as num}
           {@const drug = drugs[num - 1]}
+          {@const due = dueLabelFor(drug, num - 1, chartRows, now)}
+          {@const checked = snoPickerSelected.includes(num)}
           {@const skipReason = snoPickerSkipped[num]}
-          <div class="sno-picker-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #eee;">
-            <label style="flex:1;display:flex;align-items:center;gap:8px;">
-              <input type="checkbox" checked={snoPickerSelected.includes(num)} onchange={() => toggleSnoPickerDrug(num)} />
-              <span>{num}. {drug?.name || "(unnamed)"} {#if skipReason}<em style="color:#dc2626;">(not given)</em>{/if}</span>
+          {@const editingThis = snoPickerEditingNum === num}
+          <div class="sno-picker-row">
+            <label class="sno-picker-option">
+              <input type="checkbox" {checked} onchange={() => toggleSnoPickerDrug(num)} />
+              <span class="sno-picker-option-text" style={due.overdue ? "color:#dc2626;font-weight:bold;" : skipReason ? "color:#d97706;" : ""}>
+                {num}{drug?.name ? " - " + drug.name : ""}{drug?.route ? " (" + drug.route + ")" : ""}
+              </span>
+              {#if due.overdue}<span class="sno-picker-due-tag">Due {due.text}</span>{/if}
+              <button type="button" class="sno-picker-pencil-btn" title="Not given — write a reason" aria-label="Not given — write a reason"
+                onclick={(e) => { e.preventDefault(); openSnoSkipEditor(num); }}>✏️</button>
             </label>
-            <button type="button" class="diag-edit-btn" title="Not given reason" onclick={() => openSnoSkipEditor(num)}>✏️</button>
           </div>
-          {#if snoPickerEditingNum === num}
-            <div style="padding:8px 0;">
-              <textarea rows="2" style="width:100%;" placeholder="Reason not given" bind:value={snoPickerEditText}></textarea>
+          {#if skipReason && !editingThis}
+            <div class="sno-picker-skip-note" onclick={() => openSnoSkipEditor(num)}>{num} {abbreviateReason(skipReason)}</div>
+          {/if}
+          {#if editingThis}
+            <div class="sno-picker-skip-editor">
+              <textarea rows="2" placeholder="Reason not given, e.g. No IV line" bind:value={snoPickerEditText}></textarea>
               <div style="display:flex;gap:6px;margin-top:4px;">
-                <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;" onclick={saveSnoSkipReason}>Save Reason</button>
+                <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;" onclick={saveSnoSkipReason}>Save</button>
                 {#if skipReason}<button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick={() => clearSnoSkipReason(num)}>Clear</button>{/if}
                 <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick={cancelSnoSkipEditor}>Cancel</button>
               </div>
