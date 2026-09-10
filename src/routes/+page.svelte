@@ -71,14 +71,15 @@
   });
 
   async function exitApp() {
-    // @capacitor/app isn't a dependency of this SvelteKit project yet (no
-    // native shell here the way 68-drug-course has android/), so this is
-    // guarded on the global Capacitor bridge rather than a static import —
-    // a bare `import("@capacitor/app")` would fail the Vite/Rolldown build
-    // since the package isn't installed. Once this app gets its own
-    // Capacitor wrapper, swap this back to the dynamic-import version.
-    const w = /** @type {any} */ (window);
-    if (w.Capacitor?.Plugins?.App?.exitApp) w.Capacitor.Plugins.App.exitApp();
+    // Dynamic import so this stays a no-op in a plain browser/preview tab
+    // (outside the Capacitor-wrapped Android app, the module has nothing
+    // real to resolve to at runtime even though it's now a dependency).
+    try {
+      const { App } = await import("@capacitor/app");
+      App.exitApp();
+    } catch (e) {
+      // Not running under Capacitor — nothing to exit.
+    }
   }
 
   onMount(() => {

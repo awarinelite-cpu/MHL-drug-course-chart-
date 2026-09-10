@@ -125,6 +125,20 @@ npm run preview
   Blocked offline for refer/discharge (needs the real server data, not the
   local cache) the same way the original is.
 
-**Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): push notifications and the service worker (dose-due
-alerts), and the Capacitor Android wrapper.
+- **Push notifications, offline app shell, and the Capacitor Android
+  wrapper** — `$lib/helpers/push.js` ported verbatim (FCM web push +
+  native-path detection via `window.Capacitor`), `static/sw.js` +
+  `scripts/generate-sw-precache.mjs` for the offline app shell, and
+  `android/` (same Capacitor project as `68-drug-course`, same
+  `com.narhy.wardcharts` app id, `capacitor.config.json` pointed at this
+  project's static-adapter `build` output instead of Vite's `dist`). The
+  hardware Android back button (`useHardwareBackButton.js`) is wired into
+  the root layout the same way `useServiceWorker`/`useForegroundAlerts`
+  are — once for the whole app rather than per-page — and defers to each
+  page's own popstate handling (`__backGuard`), all the way down to Home's
+  "press again to exit" prompt. `.github/workflows/android-debug.yml`
+  builds a debug APK on push, same pattern as the original.
+
+**Port status: complete.** Every route and feature in the original React
+app (`68-drug-course`) has a Svelte counterpart here, including the native
+Android wrapper.

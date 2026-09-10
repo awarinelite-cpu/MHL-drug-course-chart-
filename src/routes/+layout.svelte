@@ -23,6 +23,40 @@
       });
     }
     initForegroundAlertsIfEnabled().catch(() => {});
+
+    // Ported from useHardwareBackButton.js — ran once for the whole app in
+    // React's App.jsx, so it lives here in the root layout too. Capacitor's
+    // native Android back button, left unhandled, falls straight through to
+    // the OS default (finish the activity) instead of stepping back through
+    // the WebView's history — it depends on how many history entries are
+    // stacked at that moment, not on the page's own back logic. Every page
+    // already drives its own back behavior off popstate (see the per-page
+    // __backGuard listeners, e.g. +page.svelte's exit-on-double-back), so the
+    // fix is to make the hardware button always issue a plain history.back()
+    // and let those existing handlers decide what happens.
+    //
+    // @capacitor/app resolves to a real module once the app is wrapped with
+    // Capacitor (see /android); a bare `import("@capacitor/app")` would fail
+    // the Vite build outside that context, so this is a dynamic import behind
+    // a try/catch, exactly like the original.
+    let backButtonHandle;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { App } = await import("@capacitor/app");
+        const h = await App.addListener("backButton", () => {
+          window.history.back();
+        });
+        if (cancelled) h.remove();
+        else backButtonHandle = h;
+      } catch (e) {
+        // Not running under Capacitor (e.g. plain browser/preview) — nothing to wire up.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (backButtonHandle) backButtonHandle.remove();
+    };
   });
 
   const isLoginRoute = $derived(page.url.pathname === "/login");

@@ -6,3 +6,17 @@ build
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ── Capacitor native Android project ────────────────────────────────────
+# android/ IS committed (Capacitor convention, matching 68-drug-course), just
+# not its build outputs, dependency caches, local machine config, or the web
+# bundle it gets on every `npx cap sync` (that's the SvelteKit `build` output
+# above, already gitignored as source).
+android/app/build
+android/.gradle
+android/local.properties
+android/captures
+android/*.iml
+android/.idea
+android/app/google-services.json
+android/app/src/main/assets/public
