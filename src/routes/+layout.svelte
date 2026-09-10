@@ -6,6 +6,8 @@
   import { authState } from "$lib/stores/auth.svelte.js";
   import { themeState } from "$lib/stores/theme.svelte.js";
   import NavDrawer from "$lib/components/NavDrawer.svelte";
+  import OfflineBanner from "$lib/components/OfflineBanner.svelte";
+  import OfflineCacheStatus from "$lib/components/OfflineCacheStatus.svelte";
   import { initForegroundAlertsIfEnabled } from "$lib/helpers/push.js";
 
   let { children } = $props();
@@ -94,6 +96,9 @@
 <svelte:head>
   <title>68 NARHY Ward Charts</title>
 </svelte:head>
+
+<OfflineBanner />
+<OfflineCacheStatus />
 
 {#if isLoginRoute}
   {@render children?.()}
