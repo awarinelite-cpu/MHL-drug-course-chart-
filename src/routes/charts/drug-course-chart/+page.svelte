@@ -3,14 +3,14 @@
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import {
-    doc, getDoc, setDoc, serverTimestamp
+    doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, collection, serverTimestamp
   } from "firebase/firestore";
   import { db } from "$lib/firebase.js";
   import { authState } from "$lib/stores/auth.svelte.js";
   import { getDocSafe } from "$lib/helpers/firestoreOffline.js";
   import Topbar from "$lib/components/Topbar.svelte";
   import {
-    ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS,
+    ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS, STATUS_LABELS, WARD_OPTIONS,
     actionColor, defaultRow, dueLabelFor, withDrugCompletionChecked, computeRouteFromSno,
     parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
     diffFields, autoDurationForFrequency
@@ -74,6 +74,12 @@
   let auditLog = $state([]);
   let saveStatus = $state("—");
   let now = $state(new Date());
+  let archiveMeta = $state(null);
+
+  let statusAction = $state("");
+  let transferWard = $state("");
+  let statusMsg = $state({ color: "", text: "" });
+  let statusApplying = $state(false);
 
   let chartRefPath = null;
   let saveTimer = null;
@@ -140,7 +146,11 @@
       let data = null;
       if (isArchived) {
         const admSnap = await getDoc(doc(db, "patients", patientId, "admissions", admissionId));
-        if (admSnap.exists()) data = admSnap.data().drugCourseChart || null;
+        if (admSnap.exists()) {
+          const admData = admSnap.data();
+          data = admData.drugCourseChart || null;
+          archiveMeta = admData;
+        }
       } else {
         chartRefPath = doc(db, "patients", patientId, "drugCourseChart", "main");
         const snap = await getDoc(chartRefPath);
@@ -495,6 +505,168 @@
     scheduleSave();
   }
 
+  // --- Patient status change: referred / transferred / discharged --------
+  // Ported from src/pages/DrugCourseChart.jsx's applyStatusAction(). Svelte's
+  // $state is read live (no latestRef.current indirection needed like the
+  // React version) — `fields`, `chartRows`, `drugs`, etc. below are already
+  // the latest in-memory values.
+  async function applyStatusAction() {
+    if (isArchived) return;
+    const reason = statusAction;
+    if (!reason) { statusMsg = { color: "#dc2626", text: "Please select an action first." }; return; }
+
+    // Discharging or referring reads across five collections (vitals,
+    // glycemic, intake & output, seizure, plus this chart) and then DELETES
+    // the live entries once archived. Getting that sequence right needs the
+    // real data, not whatever happens to be sitting in the local offline
+    // cache — so those two are blocked until back online instead of being
+    // made offline-tolerant like saveChart() above. Transferring wards
+    // doesn't archive or clear anything (see below), so it's exempt.
+    if (reason !== "transferred" && !navigator.onLine) {
+      statusMsg = { color: "#dc2626", text: "This needs an internet connection — referring or discharging archives records from several charts at once and then clears them, and doing that safely requires reading the real data rather than whatever's cached locally. Please try again once online." };
+      return;
+    }
+
+    let label = STATUS_LABELS[reason];
+    if (reason === "transferred") {
+      const wardChosen = transferWard;
+      if (!wardChosen) { statusMsg = { color: "#dc2626", text: "Please select which ward the patient is being transferred to." }; return; }
+      label = "Transferred to " + wardChosen;
+
+      if (!confirm("Confirm: " + label + "?\n\nThe patient moves to " + wardChosen + "’s New Patient queue — a nurse there still has to accept them before they show up on that ward’s patient list. Their drug chart, vitals, glycemic chart, intake & output, and seizure chart all stay exactly as they are; care just continues on the new ward.")) return;
+
+      logAudit("Patient status set: " + label);
+      statusApplying = true;
+      statusMsg = { color: "#555", text: "Sending transfer…" };
+      await saveChart(); // flush latest drug-chart edits first
+
+      // A ward transfer isn't a discharge: the admission carries on, just
+      // on a different ward, so none of the charts get archived or reset
+      // here. We only park the patient in a pendingTransfer for the
+      // receiving ward to accept — same flow as the Patient page's status
+      // control. See $lib/helpers/wardTransfer.js.
+      try {
+        await updateDoc(doc(db, "patients", patientId), {
+          pendingTransfer: {
+            toWard: wardChosen,
+            fromWard: patient?.ward || "",
+            transferredByName: authState.profile?.name || "",
+            transferredAt: serverTimestamp(),
+            transferredAtDisplay: new Date().toLocaleString()
+          },
+          updatedAt: serverTimestamp()
+        });
+      } catch (e) {
+        statusMsg = { color: "#dc2626", text: "Could not start the transfer: " + (e.code || e.message) };
+        statusApplying = false;
+        return;
+      }
+
+      statusMsg = { color: "#16a34a", text: "Sent to " + wardChosen + " — awaiting acceptance there. Redirecting…" };
+      setTimeout(() => goto("/"), 900);
+      return;
+    }
+
+    // Discharge Date is locked (readonly) so it can only ever be set here,
+    // automatically, the moment the patient is actually discharged — never
+    // typed in manually.
+    let dischargeDate = fields.f_discharge;
+    if (reason === "discharged" && !dischargeDate) {
+      dischargeDate = new Date().toISOString().slice(0, 10);
+      fields = { ...fields, f_discharge: dischargeDate };
+    }
+
+    if (!confirm("Confirm: " + label + "?\n\nAll care records for this admission (drug chart, vitals, glycemic chart, intake & output, seizure chart) will be saved together to Overview, and fresh charts will open for this patient.")) return;
+
+    logAudit("Patient status set: " + label);
+    statusApplying = true;
+    statusMsg = { color: "#555", text: "Saving all charts for this admission…" };
+    await saveChart(); // flush latest drug-chart edits first
+
+    async function fetchEntries(collName) {
+      const snap = await getDocs(collection(db, "patients", patientId, collName));
+      const arr = [];
+      snap.forEach(d => arr.push(d.data()));
+      return arr;
+    }
+    async function clearEntries(collName) {
+      const snap = await getDocs(collection(db, "patients", patientId, collName));
+      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, "patients", patientId, collName, d.id))));
+    }
+
+    // Each chart type (6-point / 3-point) keeps its own saved rows — both
+    // must be archived, not just whichever was on screen last, or switching
+    // chart type before discharge would lose data.
+    let bgData = { chartType: "6point", rows6: [], rows3: [] };
+    try {
+      const bgSnap = await getDoc(doc(db, "patients", patientId, "bloodGlucose", "main"));
+      if (bgSnap.exists()) {
+        const d = bgSnap.data();
+        bgData = { chartType: d.chartType || "6point", rows6: d.rows6 || [], rows3: d.rows3 || [] };
+      }
+    } catch (e) { /* fine to archive with blank glycemic data if this fails */ }
+
+    let vitalsArr = [], ioArr = [], seizureArr = [];
+    let ioSummary = { intake: 0, output: 0, balance: 0 };
+    try {
+      [vitalsArr, ioArr, seizureArr] = await Promise.all([fetchEntries("vitals"), fetchEntries("intakeOutput"), fetchEntries("seizure")]);
+    } catch (e) { /* fine to archive with whatever we could gather */ }
+    try {
+      const ioSumSnap = await getDoc(doc(db, "patients", patientId, "intakeOutputSummary", "current"));
+      if (ioSumSnap.exists()) {
+        const d = ioSumSnap.data();
+        ioSummary = { intake: d.intake || 0, output: d.output || 0, balance: d.balance || 0 };
+      }
+    } catch (e) { /* fine to archive without the summary snapshot — derivable from intakeOutput entries */ }
+
+    const drugChartData = { ...fields, f_discharge: dischargeDate, rows: chartRows, drugs, verbalOrders, careInstructions, auditLog };
+
+    const admissionDoc = {
+      diagnosis: fields.f_diagnosis,
+      archiveReason: reason,
+      archiveReasonLabel: label,
+      archivedAt: serverTimestamp(),
+      archivedAtDisplay: new Date().toLocaleString(),
+      drugCourseChart: drugChartData,
+      bloodGlucose: bgData,
+      vitals: vitalsArr,
+      intakeOutput: ioArr,
+      intakeOutputSummary: ioSummary,
+      seizure: seizureArr
+    };
+
+    try {
+      await addDoc(collection(db, "patients", patientId, "admissions"), admissionDoc);
+    } catch (e) {
+      statusMsg = { color: "#dc2626", text: "Could not save to Overview: " + (e.code || e.message) };
+      statusApplying = false;
+      return;
+    }
+
+    const blankDrugChart = {
+      f_admission: "", f_discharge: "", f_diagnosis: "",
+      rows: blankChartRows(), drugs: blankDrugs(),
+      verbalOrders: [], careInstructions: [], auditLog: [],
+      updatedAt: serverTimestamp()
+    };
+
+    try {
+      await Promise.all([
+        setDoc(chartRefPath, blankDrugChart), // full overwrite (no merge) so old data doesn't linger
+        setDoc(doc(db, "patients", patientId, "bloodGlucose", "main"), { chartType: "6point", rows6: [], rows3: [], updatedAt: serverTimestamp() }),
+        setDoc(doc(db, "patients", patientId, "intakeOutputSummary", "current"), { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10), updatedAt: serverTimestamp() }),
+        clearEntries("vitals"), clearEntries("intakeOutput"), clearEntries("seizure")
+      ]);
+    } catch (e) {
+      statusMsg = { color: "#dc2626", text: "Archived, but could not fully reset the new charts: " + (e.code || e.message) };
+      statusApplying = false;
+      return;
+    }
+
+    statusMsg = { color: "#16a34a", text: "Saved to Overview. Redirecting…" };
+    setTimeout(() => goto("/"), 900);
+  }
+
   onDestroy(() => { clearTimeout(saveTimer); });
 </script>
 
@@ -511,6 +683,12 @@
         <div class="patient-banner">
           <strong>{patient.name || "Unnamed patient"}</strong>
           {#if patient.ward}<span> · {patient.ward}</span>{/if}
+        </div>
+      {/if}
+      {#if isArchived && archiveMeta}
+        <div class="no-print" style="background:#fef3c7;border:1px solid #f59e0b;color:#78350f;font-weight:bold;padding:8px 12px;border-radius:6px;margin-top:10px;font-size:13px;">
+          Archived chart — {archiveMeta.archiveReasonLabel || STATUS_LABELS[archiveMeta.archiveReason] || "Closed"}
+          {#if archiveMeta.archivedAtDisplay} on {archiveMeta.archivedAtDisplay}{/if}
         </div>
       {/if}
 
@@ -677,11 +855,28 @@
         </table>
       </div>
 
-      <div class="no-print" style="margin-top:16px;padding-top:12px;border-top:1px solid #ddd;font-size:12px;color:#888;">
-        Patient status changes (referred / transferred / discharged) are coming in a follow-up build — that flow
-        reads and archives Vitals, Glycemic, Intake &amp; Output and Seizure charts together, which haven't been
-        ported to this Svelte app yet.
-      </div>
+      {#if !isArchived}
+        <div class="no-print" style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e7eb;">
+          <label style="font-weight:bold;font-size:13px;display:block;margin-bottom:6px;">Patient Status</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <select style="width:auto;min-width:220px;" value={statusAction}
+              onchange={(e) => { statusAction = e.target.value; if (e.target.value !== "transferred") transferWard = ""; }}>
+              <option value="">Select action…</option>
+              <option value="referred">Referred to another hospital</option>
+              <option value="transferred">Transferred to another ward</option>
+              <option value="discharged">Discharged</option>
+            </select>
+            {#if statusAction === "transferred"}
+              <select style="width:auto;min-width:220px;" value={transferWard} onchange={(e) => transferWard = e.target.value}>
+                <option value="">Select ward…</option>
+                {#each WARD_OPTIONS as w}<option value={w}>{w}</option>{/each}
+              </select>
+            {/if}
+            <button class="btn btn-primary" style="padding:8px 14px;font-size:13px;" disabled={statusApplying} onclick={applyStatusAction}>Apply</button>
+          </div>
+          {#if statusMsg.text}<div style="font-size:12px;margin-top:8px;color:{statusMsg.color};">{statusMsg.text}</div>{/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
