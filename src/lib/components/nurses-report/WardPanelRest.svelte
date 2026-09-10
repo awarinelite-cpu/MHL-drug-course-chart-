@@ -14,6 +14,7 @@
   import MaternityDemographicsTable from "./MaternityDemographicsTable.svelte";
   import PatientBlockView from "./PatientBlockView.svelte";
   import VitalsChipRow from "./VitalsChipRow.svelte";
+  import WardPatientPicker from "./WardPatientPicker.svelte";
 
   let {
     h, showLabel, isAdmin,
@@ -87,13 +88,7 @@
           {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
             <div class="patient-field">
               <label for={"select-patient-" + p.id}>Select Patient:</label>
-              <select id={"select-patient-" + p.id} class={"status-select" + (p.sourcePatientId ? " set" : "")}
-                value={p.sourcePatientId || ""} onchange={(e) => h.selectPatientFromWard(p.id, e.target.value)}>
-                <option value="">{"\u2014 Select from ward \u2014"}</option>
-                {#each h.wardPatientOptions as wp (wp.id)}
-                  <option value={wp.id}>{(wp.name || "Unnamed") + (wp.emr ? " (" + wp.emr + ")" : "")}</option>
-                {/each}
-              </select>
+              <WardPatientPicker value={p.sourcePatientId || ""} options={h.wardPatientOptions} onSelect={(id) => h.selectPatientFromWard(p.id, id)} />
             </div>
           {/if}
           {#if locationOptions}

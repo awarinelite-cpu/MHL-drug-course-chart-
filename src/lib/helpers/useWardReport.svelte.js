@@ -20,7 +20,7 @@ import {
 } from "./nursesReportCommon.js";
 import { patientWardAndBedTypeForReportKey } from "./wardNameMatch.js";
 import { wardHeadcount } from "./wardCensus.js";
-import { applyPatientStatus } from "./patientAdmissionStatus.js";
+import { applyPatientStatus, closeOutDischargedPatient } from "./patientAdmissionStatus.js";
 
 export const movementFields = SHIFT_STAT_FIELDS;
 const byKey = (k) => movementFields.find((f) => f.key === k);
@@ -157,7 +157,15 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
           const data = d.data();
           if (data.pendingTransferMhl) return;
           if (info.bedType && (data.pedBedTypeMhl || "") !== info.bedType) return;
-          list.push({ id: d.id, name: data.name || "", emr: data.emr || "", age: data.age || "", admissionDate: data.admissionDate || "", diagnosis: data.diagnosis || "" });
+          // dischargeStatus ('DISCHARGE' / 'TRANS OUT') is set by
+          // applyPatientStatus the moment a patient is discharged/referred
+          // — via this report's own status dropdown, via the Patient page,
+          // or straight off the Drug Course Chart. The patient stays on
+          // this list (still keyed by wardMhl) so the nurse can tap their
+          // name and write a closing note; see WardPatientPicker.svelte for
+          // how it's shown, and submitReport below for how they finally
+          // drop off once that note is submitted.
+          list.push({ id: d.id, name: data.name || "", emr: data.emr || "", age: data.age || "", admissionDate: data.admissionDate || "", diagnosis: data.diagnosis || "", dischargeStatus: data.dischargeStatus || "" });
         });
         list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         if (!cancelled) wardPatientOptions = list;
@@ -345,6 +353,12 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
         if (!next.age && record.age) next.age = record.age;
         if (!next.doa && record.admissionDate) next.doa = record.admissionDate;
         if (!next.diagnosis && record.diagnosis) next.diagnosis = record.diagnosis;
+        // Picking someone already tagged DISCHARGE/TRANS OUT (see
+        // WardPatientPicker.svelte) means this write-up is their closing
+        // note — pre-fill Status to match so submitReport recognizes it
+        // and the nurse doesn't have to set it by hand, but never
+        // override something the nurse already picked themselves.
+        if (!next.status && record.dischargeStatus) next.status = record.dischargeStatus;
         return next;
       })
     };
@@ -391,22 +405,43 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
     }
 
     // A write-up linked to a real patient record whose status is
-    // DISCHARGE or TRANS OUT gets that patient discharged/referred for
-    // real on submit — the same archive-and-reset flow as the Drug
-    // Course Chart's own Patient Status control.
-    const toArchive = doc_.patients.filter((p) => p.sourcePatientId && !p.archivedFromReport && PATIENT_STATUS_ARCHIVE_REASON[p.status]);
-    if (toArchive.length && !navigator.onLine) {
-      saveStatus = { text: "Some patients here are marked Discharge/Trans Out \u2014 archiving them needs an internet connection. Please try again once online, or clear their status to submit without archiving them.", error: true };
+    // DISCHARGE or TRANS OUT finalizes that patient on submit. Two
+    // cases, handled the same way from here on:
+    //  - Freshly set here (wardPatientOptions didn't already show them
+    //    tagged DISCHARGE/TRANS OUT): archive their current admission for
+    //    real — the same archive-and-reset flow as the Drug Course
+    //    Chart's own Patient Status control.
+    //  - Already tagged (the nurse picked them off the roster where they
+    //    showed the small red DISCHARGE/TRANS OUT tag — see
+    //    WardPatientPicker.svelte — because they were discharged/referred
+    //    straight off the Drug Course Chart, or off the Patient page,
+    //    earlier): already archived, so this write-up is just their
+    //    closing note — skip re-archiving.
+    // Either way, once submitted this closes them out
+    // (closeOutDischargedPatient) so they finally drop off this and every
+    // other ward-scoped patient list. Skips anything already finalized
+    // this way or with no linked record.
+    const alreadyTaggedIds = new Set(wardPatientOptions.filter((p) => p.dischargeStatus).map((p) => p.id));
+    const toFinalize = doc_.patients.filter((p) => p.sourcePatientId && !p.archivedFromReport && PATIENT_STATUS_ARCHIVE_REASON[p.status]);
+    if (toFinalize.length && !navigator.onLine) {
+      saveStatus = { text: "Some patients here are marked Discharge/Trans Out \u2014 closing them out needs an internet connection. Please try again once online, or clear their status to submit without closing them out.", error: true };
       return;
     }
     const archiveErrors = [];
-    if (toArchive.length) {
-      const results = await Promise.all(toArchive.map((p) =>
-        applyPatientStatus({
-          patientId: p.sourcePatientId, reason: PATIENT_STATUS_ARCHIVE_REASON[p.status],
-          transferWard: "", fromWard: w?.label || "", transferredByName: profile?.name || "Unknown"
-        }).then((r) => ({ id: p.id, ok: r.ok, message: r.message, name: p.name || p.emr || "A patient" }))
-      ));
+    if (toFinalize.length) {
+      const results = await Promise.all(toFinalize.map(async (p) => {
+        const name = p.name || p.emr || "A patient";
+        if (!alreadyTaggedIds.has(p.sourcePatientId)) {
+          const r = await applyPatientStatus({
+            patientId: p.sourcePatientId, reason: PATIENT_STATUS_ARCHIVE_REASON[p.status],
+            transferWard: "", fromWard: w?.label || "", transferredByName: profile?.name || "Unknown"
+          });
+          if (!r.ok) return { id: p.id, ok: false, message: r.message, name };
+        }
+        const closed = await closeOutDischargedPatient(p.sourcePatientId);
+        if (!closed.ok) return { id: p.id, ok: false, message: closed.message, name };
+        return { id: p.id, ok: true, name };
+      }));
       const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
       results.forEach((r) => { if (!r.ok) archiveErrors.push(r.name + ": " + r.message); });
       doc_ = { ...doc_, patients: doc_.patients.map((p) => okIds.has(p.id) ? { ...p, archivedFromReport: true } : p) };
