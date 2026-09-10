@@ -106,9 +106,19 @@ npm run preview
   check so it can't clobber a newer admission already in progress), the
   five-chart grid, and per-admission Share/Print/Export (PDF/JSON).
 
+- **Nurses Report** (`/nurses-report/*`) — Role Select, Ward Nurse (incl.
+  the PAED WARD merged-panel selector), Analytics, Archive List, Archive
+  View, and **Overall Nurse** (the All Wards 24-hour statistics table with
+  admin ward/column renaming and custom columns, Patient Demographics
+  totals, grouped Ward Reports for PAED WARD/MATERNITY WARD, per-ward
+  lock toggle, nurse-on-duty contact popup, "Reset Occ from patient list",
+  and Save to Archive). All ported onto the same `nursesReportCommon.js` /
+  `useWardReport.svelte.js` helpers as Ward Nurse and Archive View, so
+  overrides and Firestore doc shapes match everywhere.
+
 **Not yet ported** (placeholder pages, linked from the nav so routing
-doesn't break): the Nurses Report section, push notifications,
-the service worker, and the Capacitor Android wrapper.
+doesn't break): push notifications and the service worker (dose-due
+alerts), and the Capacitor Android wrapper.
 
 **Intentionally deferred:** the Drug Course Chart's patient status-change
 flow (referred / transferred / discharged) — in the original this reads
