@@ -427,6 +427,25 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
       saveStatus = { text: "Some patients here are marked Discharge/Trans Out \u2014 closing them out needs an internet connection. Please try again once online, or clear their status to submit without closing them out.", error: true };
       return;
     }
+
+    // A patient not already tagged (wardPatientOptions had no
+    // dischargeStatus for them) is about to be discharged/referred for
+    // real, right now, purely because this write-up's own Status field
+    // says so — this is the "second route" into a discharge: a nurse who
+    // knows the patient is leaving marks it here even though nobody set
+    // that from the Drug Course Chart (e.g. the nurse who actually
+    // discharged them forgot to). Confirm before doing anything
+    // irreversible, same as the Drug Course Chart's own Patient Status
+    // control and the Patient page's do for this exact archive.
+    const freshDischarges = toFinalize.filter((p) => !alreadyTaggedIds.has(p.sourcePatientId));
+    if (freshDischarges.length) {
+      const names = freshDischarges.map((p) => (p.name || p.emr || "Unnamed") + " \u2014 " + p.status).join("\n");
+      if (!confirm("Submitting this report will discharge/refer the following patient(s) and archive their current chart:\n\n" + names + "\n\nContinue?")) {
+        saveStatus = { text: "Submission cancelled — clear or change the Status field on the patient(s) listed above if that wasn't intended.", error: true };
+        return;
+      }
+    }
+
     const archiveErrors = [];
     if (toFinalize.length) {
       const results = await Promise.all(toFinalize.map(async (p) => {
