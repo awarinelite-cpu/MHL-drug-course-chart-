@@ -12,6 +12,7 @@
   import { app, db, firebaseConfig } from "$lib/firebase.js";
   import { authState } from "$lib/stores/auth.svelte.js";
   import { downloadFullBackup } from "$lib/helpers/export.js";
+  import { rebuildSearchIndex } from "$lib/helpers/patientDirectory.js";
   import { avatarMarkup } from "$lib/helpers/avatar.js";
   import {
     SOUND_OPTIONS, APPEARANCE_OPTIONS, REPEAT_OPTIONS, ALL_FREQUENCIES, GLUCOSE_INTERVAL_OPTIONS,
@@ -72,6 +73,8 @@
 
   let backupRunning = $state(false);
   let backupStatus = $state("");
+  let reindexRunning = $state(false);
+  let reindexStatus = $state("");
 
   loadUsers();
   loadPatients();
@@ -114,6 +117,29 @@
       backupStatus = "Backup failed: " + (e.message || e.code || "unknown error");
     } finally {
       backupRunning = false;
+    }
+  }
+
+  // One-time backfill for the Home page's search box (see
+  // patientDirectory.js) — any patient record created before this feature
+  // shipped (from either MHL or 68 — same shared doc) is missing the
+  // nameLower/emrLower fields the search's indexed "starts with" queries
+  // rely on, so those older records won't turn up in a search until this
+  // has run once. Safe to run again later (it only touches records still
+  // missing the fields), and doesn't affect the ordinary myWard patient
+  // list, which never needed these fields.
+  async function runReindex() {
+    reindexRunning = true;
+    reindexStatus = "Scanning patient records…";
+    try {
+      const updated = await rebuildSearchIndex();
+      reindexStatus = updated
+        ? "Done — " + updated + " older patient record(s) are now searchable by name/EMR."
+        : "Done — every patient record was already up to date.";
+    } catch (e) {
+      reindexStatus = "Reindex failed: " + (e.message || e.code || "unknown error");
+    } finally {
+      reindexRunning = false;
     }
   }
 
@@ -459,6 +485,12 @@
       </p>
       <button class="btn btn-primary" disabled={backupRunning} onclick={runBackup}>Download Full Backup (JSON)</button>
       <div style="font-size:12px;color:#555;margin-top:8px;">{backupStatus}</div>
+      <button class="btn btn-secondary" style="margin-top:12px;" disabled={reindexRunning} onclick={runReindex}>
+        {reindexRunning ? "Rebuilding search index…" : "Rebuild Patient Search Index"}
+      </button>
+      <div style="font-size:12px;color:#555;margin-top:8px;">
+        {reindexStatus || "Run this once after updating, so older patient records show up in the Home page search box."}
+      </div>
     </div>
   </div>
 

@@ -2,7 +2,7 @@
   // Ported from src/pages/Home.jsx.
   import { onMount, onDestroy } from "svelte";
   import { goto } from "$app/navigation";
-  import { collection, getDocs, getDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+  import { collection, getDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
   import { db } from "$lib/firebase.js";
   import { authState } from "$lib/stores/auth.svelte.js";
   import { avatarMarkup } from "$lib/helpers/avatar.js";
@@ -11,10 +11,12 @@
   import NewPatientTransfersModal from "$lib/components/NewPatientTransfersModal.svelte";
   import { parsePatientFields } from "$lib/helpers/patientParse.js";
   import { generateCsvTemplate, parsePatientCsv } from "$lib/helpers/patientCsv.js";
-  import { pendingTransfersFor } from "$lib/helpers/wardTransfer.js";
-  import { wardHeadcount } from "$lib/helpers/wardCensus.js";
   import { reportWardKeysForPatientWard, patientWardAndBedTypeForReportKey } from "$lib/helpers/wardNameMatch.js";
+  import { wardHeadcount } from "$lib/helpers/wardCensus.js";
   import { WARDS } from "$lib/helpers/nursesReportCommon.js";
+  import { loadWardPatients, loadIncomingTransfers, searchPatients, findPatientByEmrExact } from "$lib/helpers/patientDirectory.js";
+
+  function normEmr(emr) { return (emr || "").trim().toLowerCase(); }
 
   const EMPTY_FORM = { name: "", emr: "", diagnosis: "", ward: "", pedBedType: "", age: "", hospNo: "", admissionDate: "", allergies: "", insurance: "" };
 
@@ -26,7 +28,18 @@
 
   let searchInputEl = $state(null);
   let searchQuery = $state("");
-  let allPatients = $state(null); // null = still loading
+  // Just this ward's patients (see patientDirectory.js) — replaces what
+  // used to be every patient shared between MHL and 68. null = loading.
+  let myWardPatients = $state(null);
+  let incomingTransfers = $state([]);
+  // Cross-ward name/EMR search results — null when the search box is
+  // empty (the patient list below falls back to myWardPatients then).
+  let searchResults = $state(null);
+  let searching = $state(false);
+  // EMR -> matched existing patient, resolved once per parsed bulk-upload
+  // file (see handleBulkFile) instead of re-querying per row on every
+  // render or during the actual save.
+  let bulkEmrMatches = $state(new Map());
 
   let showNewForm = $state(false);
   let newForm = $state({ ...EMPTY_FORM });
@@ -87,7 +100,7 @@
       searchInputEl.scrollIntoView({ behavior: "smooth", block: "center" });
       searchInputEl.focus();
     }
-    loadAllPatients();
+    loadWardData();
 
     // Ward-to-ward transfers, new admissions, etc. are written by other
     // devices, so a plain load-on-mount only shows what existed when this
@@ -100,10 +113,10 @@
     const pollTimer = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       if (showNewForm || showBulkUpload || showEmrPaste) return;
-      loadAllPatients(true);
+      loadWardData(true);
     }, POLL_MS);
     const onVisible = () => {
-      if (document.visibilityState === "visible") loadAllPatients(true);
+      if (document.visibilityState === "visible") loadWardData(true);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -112,15 +125,40 @@
     };
   });
 
-  async function loadAllPatients(force) {
-    if (allPatients && !force) return allPatients;
-    const snap = await getDocs(collection(db, "patients"));
-    const list = [];
-    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-    list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    allPatients = list;
-    return list;
+  // Replaces the old getDocs(collection(db,"patients")) full-hospital
+  // scan with two targeted queries scoped to just this nurse's ward (see
+  // patientDirectory.js) — the day-to-day view doesn't need to touch any
+  // other ward's patients at all, so this stays fast no matter how large
+  // the shared patient collection grows (whether from MHL or 68 usage). A
+  // profile with no ward set (e.g. an admin account) now sees an empty
+  // list here rather than everyone — the search box below is the way to
+  // find a specific patient in that case.
+  async function loadWardData(force) {
+    if (myWardPatients && !force) return;
+    const ward = authState.profile?.ward || "";
+    const [wardList, incoming] = await Promise.all([
+      loadWardPatients(ward),
+      loadIncomingTransfers(ward)
+    ]);
+    myWardPatients = wardList;
+    incomingTransfers = incoming;
   }
+
+  // Debounced cross-ward search — fires a targeted, indexed query (see
+  // searchPatients in patientDirectory.js) instead of filtering an
+  // already-downloaded full patient list. Clearing the box drops back to
+  // the myWardPatients view above.
+  let searchDebounceTimer;
+  $effect(() => {
+    const term = searchQuery.trim();
+    clearTimeout(searchDebounceTimer);
+    if (!term) { searchResults = null; searching = false; return; }
+    searching = true;
+    searchDebounceTimer = setTimeout(() => {
+      searchPatients(term).then((r) => { searchResults = r; searching = false; });
+    }, 300);
+  });
+
 
   function openPatient(p) {
     try { sessionStorage.setItem("selectedPatientId", p.id); } catch (e) { /* ignore */ }
@@ -159,6 +197,7 @@
     const diagnosis = newForm.diagnosis.trim();
     const data = {
       name, emr,
+      nameLower: name.toLowerCase(), emrLower: emr.toLowerCase(),
       diagnosis, wardMhl: newForm.ward.trim(),
       pedBedTypeMhl: newForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (newForm.pedBedType || "") : "",
       age: newForm.age.trim(),
@@ -180,7 +219,12 @@
       console.warn("Patient write queued locally; will retry once back online:", e);
     });
 
-    allPatients = allPatients ? [...allPatients, { id: ref.id, ...data }] : [{ id: ref.id, ...data }];
+    // Only add to the in-memory ward list if it lands on the ward
+    // currently in view — otherwise it'll turn up next time that ward's
+    // list loads.
+    if (data.wardMhl === (authState.profile?.ward || "")) {
+      myWardPatients = myWardPatients ? [...myWardPatients, { id: ref.id, ...data }] : [{ id: ref.id, ...data }];
+    }
     showNewForm = false;
     newForm = { ...EMPTY_FORM };
     clearEmrPaste();
@@ -207,6 +251,7 @@
     bulkFileName = file.name;
     bulkMsg = "";
     bulkRows = null;
+    bulkEmrMatches = new Map();
     const reader = new FileReader();
     reader.onload = () => {
       const { headerOk, rows } = parsePatientCsv(String(reader.result || ""));
@@ -225,17 +270,17 @@
       bulkMsg =
         rows.length + " row(s) found" +
         (errorCount ? ", " + errorCount + " with errors — fix or they'll be skipped." : ", all look good.");
+      // Resolve every row's EMR against Firestore once, up front — one
+      // indexed lookup per row instead of the old in-memory scan of a
+      // fully-downloaded patient list. Both the preview table below and
+      // saveBulkPatients read from this same resolved map, so a given
+      // EMR is only looked up once per file, not once per render.
+      const validRows = rows.filter(r => r.errors.length === 0 && r.data.emr);
+      Promise.all(validRows.map((r) => findPatientByEmrExact(r.data.emr).then((p) => [normEmr(r.data.emr), p])))
+        .then((pairs) => { bulkEmrMatches = new Map(pairs.filter(([, p]) => p)); });
     };
     reader.onerror = () => { bulkMsg = "Could not read that file."; };
     reader.readAsText(file);
-  }
-
-  // Matches an "add drugs to an existing patient" CSV row against a patient
-  // already in Firestore, purely by EMR Number (case/whitespace-insensitive).
-  function findExistingPatientByEmr(emr) {
-    const norm = (emr || "").trim().toLowerCase();
-    if (!norm) return null;
-    return (allPatients || []).find(p => (p.emr || "").trim().toLowerCase() === norm) || null;
   }
 
   // Adds a CSV row's parsed drugs onto a patient's Drug Course Chart —
@@ -269,14 +314,16 @@
     const created = [];
     let newCount = 0, updatedCount = 0, drugCount = 0;
     for (const r of validRows) {
-      const existing = findExistingPatientByEmr(r.data.emr);
+      const existing = bulkEmrMatches.get(normEmr(r.data.emr));
       let patientId;
       if (existing) {
         patientId = existing.id;
         updatedCount++;
       } else {
         const data = {
-          name: r.data.name, emr: r.data.emr, diagnosis: r.data.diagnosis,
+          name: r.data.name, emr: r.data.emr,
+          nameLower: (r.data.name || "").trim().toLowerCase(), emrLower: (r.data.emr || "").trim().toLowerCase(),
+          diagnosis: r.data.diagnosis,
           wardMhl: r.data.ward, pedBedTypeMhl: r.data.ward === "PEDIATRIC/NICU WARD" ? r.data.pedBedType : "",
           age: r.data.age, hospNo: r.data.hospNo, admissionDate: r.data.admissionDate,
           allergies: r.data.allergies, insurance: r.data.insurance,
@@ -299,7 +346,12 @@
         drugCount += await addDrugsToChart(patientId, r.data.drugsParsed);
       }
     }
-    allPatients = allPatients ? [...allPatients, ...created] : created;
+    // Only the ones landing on the ward currently in view need adding to
+    // myWardPatients directly — the rest will show up next time that
+    // ward's own list loads.
+    const ward = authState.profile?.ward || "";
+    const onMyWard = created.filter((p) => p.wardMhl === ward);
+    if (onMyWard.length) myWardPatients = myWardPatients ? [...myWardPatients, ...onMyWard] : onMyWard;
     bulkSaving = false;
     bulkMsg =
       newCount + " new patient(s) created, " + updatedCount + " existing patient(s) matched by EMR" +
@@ -317,34 +369,30 @@
 
   const q = $derived(searchQuery.trim().toLowerCase());
   const myWard = $derived(authState.profile?.ward || "");
-  // Patients mid-transfer (pendingTransferMhl set) are held out of every
-  // normal ward list — they only show up in the receiving ward's "New
-  // Patient" queue until a nurse there accepts or rejects them. The
-  // search box is a general patient lookup across every patient this
-  // hospital shares with 68 (same /patients record), not a ward-scoped
-  // one — a patient with no wardMhl yet (only ever admitted on 68, or
-  // never transferred onto an MHL ward) still turns up here by name/EMR,
-  // just not on any specific ward list until transferred onto one.
-  const visiblePatients = $derived((allPatients || []).filter(p =>
-    !p.pendingTransferMhl &&
-    (q
-      ? ((p.emr || "").toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q))
-      : (!myWard || p.wardMhl === myWard))
-  ));
+  // Patients mid-transfer are excluded already, inside patientDirectory.js
+  // (both loadWardPatients and searchPatients filter them out) — they
+  // only show up in the receiving ward's "New Patient" queue until a
+  // nurse there accepts or rejects them. With a search query, the list
+  // is searchResults (cross-ward, across every patient this hospital
+  // shares with 68 — see the debounced $effect above); otherwise it's
+  // this ward's own list.
+  const visiblePatients = $derived(q ? (searchResults || []) : (myWardPatients || []));
+  const patientsLoaded = $derived(q ? searchResults !== null : myWardPatients !== null);
   const reportWardKeys = $derived(reportWardKeysForPatientWard(myWard));
   const isSplitWard = $derived(reportWardKeys.length > 1);
   // Per report-ward-key headcount so the badge always matches the patient
   // list right below it. For a split ward (PEDIATRIC/NICU WARD), each
   // key's headcount is further narrowed to matching pedBedType.
+  // myWardPatients is already scoped to this ward (see loadWardData
+  // above); wardHeadcount's own ward filter here is just a no-op safety net.
   const wardBreakdown = $derived(reportWardKeys.map((k) => {
     const info = patientWardAndBedTypeForReportKey(k);
-    const count = wardHeadcount(allPatients, myWard, info?.bedType);
+    const count = wardHeadcount(myWardPatients, myWard, info?.bedType);
     return { key: k, bedType: info?.bedType || null, count };
   }));
   const wardPatientCount = $derived(reportWardKeys.length
     ? wardBreakdown.reduce((sum, x) => sum + x.count, 0)
-    : wardHeadcount(allPatients, myWard));
-  const incomingTransfers = $derived(pendingTransfersFor(allPatients, myWard));
+    : wardHeadcount(myWardPatients, myWard));
   // Grouped view of the patient list for a split ward — Bed / Cot sections
   // plus an "unset" bucket. Only makes sense for the unfiltered "my ward"
   // view; a cross-ward search stays a flat list.
@@ -441,7 +489,7 @@
                   <td style="border:1px solid #000;padding:3px;font-size:12px;">{r.data.ward || "—"}</td>
                   <td style="border:1px solid #000;padding:3px;font-size:12px;">
                     {r.data.drugsParsed && r.data.drugsParsed.length ? r.data.drugsParsed.length + " drug(s)" : "—"}
-                    {#if findExistingPatientByEmr(r.data.emr)}
+                    {#if bulkEmrMatches.has(normEmr(r.data.emr))}
                       <div style="color:#2563eb;">existing patient — drugs only</div>
                     {/if}
                   </td>
@@ -516,10 +564,10 @@
       </div>
     {/if}
     <div class="search-results">
-      {#if allPatients === null}
-        Loading patients…
+      {#if !patientsLoaded}
+        {searching ? "Searching…" : "Loading patients…"}
       {/if}
-      {#if allPatients && visiblePatients.length === 0}
+      {#if patientsLoaded && visiblePatients.length === 0}
         <div class="error-msg">
           {#if q}
             No patient matches that search.
@@ -528,7 +576,7 @@
           {/if}
         </div>
       {/if}
-      {#if allPatients && visiblePatients.length > 0 && pedGroups}
+      {#if patientsLoaded && visiblePatients.length > 0 && pedGroups}
         {#each pedGroups.groups as g (g.key)}
           <div style="margin-bottom:10px;">
             <div style="font-weight:bold;font-size:13px;margin:8px 0 4px;">{g.label} ({g.patients.length})</div>
@@ -555,7 +603,7 @@
           </div>
         {/if}
       {/if}
-      {#if allPatients && visiblePatients.length > 0 && !pedGroups}
+      {#if patientsLoaded && visiblePatients.length > 0 && !pedGroups}
         {#each visiblePatients as p (p.id)}
           <div class="search-result-item" onclick={() => openPatient(p)}>
             <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}</span>
@@ -572,7 +620,7 @@
     ward={myWard}
     transfers={incomingTransfers}
     onClose={() => showTransfers = false}
-    onResolved={() => loadAllPatients(true)}
+    onResolved={() => loadWardData(true)}
   />
 {/if}
 
