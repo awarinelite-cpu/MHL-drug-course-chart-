@@ -15,7 +15,7 @@
     parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
     diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText, abbreviateReason
   } from "$lib/helpers/drugChartHelpers.js";
-  import { ROSTER_TAG_FOR_REASON } from "$lib/helpers/patientAdmissionStatus.js";
+  import { ROSTER_TAG_FOR_REASON, clearAllocationsForPatient } from "$lib/helpers/patientAdmissionStatus.js";
 
   const FIELD_IDS = ["f_admission", "f_discharge", "f_diagnosis"];
 
@@ -563,6 +563,11 @@
         return;
       }
 
+      // Sending ward's allocation no longer applies once the patient is on
+      // their way to a different ward — see clearAllocationsForPatient.
+      // Best-effort: the transfer itself already succeeded.
+      clearAllocationsForPatient(patientId).catch((e) => console.warn("Could not clear allocations after transfer:", e));
+
       statusMsg = { color: "#16a34a", text: "Sent to " + wardChosen + " — awaiting acceptance there. Redirecting…" };
       setTimeout(() => goto("/"), 900);
       return;
@@ -668,6 +673,10 @@
       statusApplying = false;
       return;
     }
+
+    // Admission is over — see clearAllocationsForPatient. Best-effort, same
+    // reasoning as the transfer branch above.
+    clearAllocationsForPatient(patientId).catch((e) => console.warn("Could not clear allocations after discharge/refer:", e));
 
     statusMsg = { color: "#16a34a", text: "Saved to Overview. Redirecting…" };
     setTimeout(() => goto("/"), 900);

@@ -69,6 +69,29 @@
       alert("Couldn't remove: " + (e.code || e.message || "unknown error"));
     }
   }
+
+  let clearingAll = $state(false);
+
+  // One-shot cleanup for allocations that piled up before discharge/transfer
+  // started clearing them automatically (or from covering another ward) —
+  // deletes every allocation doc currently shown, not just ones from this
+  // session, since loadAllocations() already pulled the full list for this
+  // uid regardless of ward.
+  async function clearAllAllocations() {
+    if (allocations.length === 0) return;
+    if (!confirm("Remove all " + allocations.length + " allocated patient(s) from your list? You'll stop receiving their due-dose/glucose alerts until you allocate yourself again.")) return;
+    clearingAll = true;
+    const toRemove = allocations;
+    try {
+      await Promise.all(toRemove.map(a => deleteDoc(doc(db, "allocations_mhl", a.id))));
+      allocations = allocations.filter(a => !toRemove.some(r => r.id === a.id));
+    } catch (e) {
+      alert("Couldn't clear all: " + (e.code || e.message || "unknown error") + " — some may remain.");
+      loadAllocations(); // re-sync with whatever actually got deleted
+    } finally {
+      clearingAll = false;
+    }
+  }
 </script>
 
 <Topbar brand="My Patients">
@@ -77,7 +100,14 @@
 
 <div class="container">
   <div class="card-box">
-    <h2 style="margin-top:0;">My Allocated Patients</h2>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+      <h2 style="margin-top:0;">My Allocated Patients</h2>
+      {#if status === "ready" && allocations.length > 0}
+        <button class="btn btn-secondary" style="padding:5px 10px;font-size:12px;white-space:nowrap;" disabled={clearingAll} onclick={clearAllAllocations}>
+          {clearingAll ? "Clearing…" : "Clear All"}
+        </button>
+      {/if}
+    </div>
     <div style="font-size:13px;color:#6b7280;margin-bottom:4px;">
       Patients you've allocated to yourself from the Search page. Tap a patient to open their chart, or remove them once you're done.
     </div>

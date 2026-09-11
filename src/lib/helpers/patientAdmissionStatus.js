@@ -1,6 +1,30 @@
-import { collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, addDoc, query, where, updateDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "$lib/firebase.js";
 import { STATUS_LABELS, defaultRow } from "./drugChartHelpers.js";
+
+// Every "Allocate to Me" doc (allocations_mhl, keyed by uid+patientId — see
+// the Patient page's allocationDocRef) has no ward or admission tie-in, so
+// nothing ever removes it once the reason a nurse allocated themselves is
+// gone — the patient can transfer ward or leave the hospital entirely and
+// the stale doc just sits there, still routing that patient's due-dose/
+// glucose push alerts to a nurse who no longer has them (the shared Cloud
+// Functions, checkDueDrugs/checkDueGlucoseChecks, route off this exact
+// collection — see loadAllocatedUidsByPatient in functions/index.js in the
+// 68-drug-course repo). Also clears 68's own `allocations` collection for
+// this patient, since patients are shared between both apps and a 68 nurse
+// could equally have an allocation still sitting there. Called from
+// applyPatientStatus below for discharge/refer (admission is over) and
+// transfer (admission continues, but the sending ward's claim on the
+// patient doesn't — the receiving ward's nurse allocates fresh). Best-
+// effort: a failure here shouldn't block the discharge/transfer itself.
+export async function clearAllocationsForPatient(patientId) {
+  const [snap, snapMhl] = await Promise.all([
+    getDocs(query(collection(db, 'allocations'), where('patientId', '==', patientId))),
+    getDocs(query(collection(db, 'allocations_mhl'), where('patientId', '==', patientId)))
+  ]);
+  await Promise.all([...snap.docs, ...snapMhl.docs].map(d => deleteDoc(d.ref)));
+  return snap.size + snapMhl.size;
+}
 
 function blankDrugs() { return Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' })); }
 function blankChartRows() { return Array(18).fill(null).map(() => defaultRow()); }
@@ -137,6 +161,13 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
     } catch (e) {
       return { ok: false, message: 'Could not start the transfer: ' + (e.code || e.message) };
     }
+    // Sending ward's allocation no longer applies once the patient is on
+    // their way to a different ward — see clearAllocationsForPatient above.
+    // Best-effort: the transfer itself already succeeded, so a failure
+    // here just means a stale allocation lingers rather than blocking
+    // anything (the clearAllocationsOnPatientStatusChange Cloud Function
+    // in the 68-drug-course repo catches this as a backstop either way).
+    clearAllocationsForPatient(patientId).catch((e) => console.warn('Could not clear allocations after transfer:', e));
     return { ok: true, label, wardChosen };
   }
 
@@ -239,6 +270,10 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
   } catch (e) {
     return { ok: false, archived: true, message: 'Archived, but could not fully reset the new charts: ' + (e.code || e.message) };
   }
+
+  // Admission is over — see clearAllocationsForPatient above. Best-effort,
+  // same reasoning as the transfer branch.
+  clearAllocationsForPatient(patientId).catch((e) => console.warn('Could not clear allocations after discharge/refer:', e));
 
   return { ok: true, label, wardChosen };
 }
