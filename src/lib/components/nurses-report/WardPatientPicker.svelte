@@ -12,12 +12,30 @@
   // write that closing note.
   import { ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
 
-  let { value = "", options = [], onSelect, id = undefined } = $props();
+  let { value = "", options = [], onSelect, id = undefined, usedIds = undefined } = $props();
 
   let open = $state(false);
 
   let selected = $derived(options.find((o) => o.id === value));
   let label = $derived(selected ? ((selected.name || "Unnamed") + (selected.emr ? " (" + selected.emr + ")" : "")) : "\u2014 Select from ward \u2014");
+
+  // Two separate patient records can end up sharing the same EMR number
+  // (a name typed/reordered differently on re-entry) — flags every option
+  // whose EMR matches another option's so a nurse can check with the
+  // Overall Nurse/Admin instead of guessing which record is the live one.
+  let duplicateEmrIds = $derived.by(() => {
+    const counts = {};
+    options.forEach((o) => {
+      const k = (o.emr || "").trim().toLowerCase();
+      if (k) counts[k] = (counts[k] || 0) + 1;
+    });
+    const ids = new Set();
+    options.forEach((o) => {
+      const k = (o.emr || "").trim().toLowerCase();
+      if (k && counts[k] > 1) ids.add(o.id);
+    });
+    return ids;
+  });
 
   function pick(id) { onSelect(id); open = false; }
 </script>
@@ -36,11 +54,18 @@
           <span class={"ward-patient-picker-name" + (!value ? " is-selected" : "")}>{"\u2014 Select from ward \u2014"}</span>
         </div>
         {#each options as o (o.id)}
-          <div class="ward-patient-picker-row" onclick={() => pick(o.id)}>
+          {@const isUsedElsewhere = !!usedIds && usedIds.has(o.id) && o.id !== value}
+          <div class={"ward-patient-picker-row" + (isUsedElsewhere ? " is-used" : "")} onclick={() => { if (!isUsedElsewhere) pick(o.id); }}>
             <div>
               <span class={"ward-patient-picker-name" + (o.id === value ? " is-selected" : "")}>
                 {(o.name || "Unnamed") + (o.emr ? " (" + o.emr + ")" : "")}{o.location ? " \u2014 " + o.location : ""}
               </span>
+              {#if isUsedElsewhere}
+                <div class="ward-patient-picker-tag used">{"Already selected in another write-up"}</div>
+              {/if}
+              {#if duplicateEmrIds.has(o.id)}
+                <div class="ward-patient-picker-tag duplicate">{"\u26A0\uFE0F Duplicate EMR \u2014 check with Overall Nurse"}</div>
+              {/if}
               {#if o.dischargeStatus}
                 <div class="ward-patient-picker-tag">{o.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : o.dischargeStatus === "DEATH" ? "Death" : "Discharged"}</div>
               {:else if o.admissionTag}

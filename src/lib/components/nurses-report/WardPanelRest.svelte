@@ -119,7 +119,8 @@
           {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
             <div class="patient-field">
               <label for={"select-patient-" + p.id}>Select Patient:</label>
-              <WardPatientPicker value={p.sourcePatientId || ""} options={h.wardPatientOptions} onSelect={(id) => h.selectPatientFromWard(p.id, id)} />
+              <WardPatientPicker value={p.sourcePatientId || ""} options={h.wardPatientOptions} onSelect={(id) => h.selectPatientFromWard(p.id, id)}
+                usedIds={new Set(h.wardDoc.patients.filter((other) => other.id !== p.id && other.sourcePatientId).map((other) => other.sourcePatientId))} />
             </div>
           {/if}
           {#if locationOptions}
