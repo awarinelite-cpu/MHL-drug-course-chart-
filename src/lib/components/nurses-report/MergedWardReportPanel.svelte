@@ -12,9 +12,11 @@
   import { goto } from "$app/navigation";
   import { authState } from "$lib/stores/auth.svelte.js";
   import { createWardReport } from "$lib/helpers/useWardReport.svelte.js";
+  import { ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
   import MergedShiftTable from "./MergedShiftTable.svelte";
   import MergedDemographicsTable from "./MergedDemographicsTable.svelte";
   import WardPanelRest from "./WardPanelRest.svelte";
+  import WardPatientPicker from "./WardPatientPicker.svelte";
 
   let { group } = $props();
 
@@ -24,6 +26,21 @@
   const hooks = [hA, hB];
   const bothLoaded = $derived(hooks.every((h) => h.wardDoc));
   const mergedDemographics = group.demographicsVariant === "merged";
+
+  // Same quick lookup as WardPanelRest's own Previous Occ card — reads off
+  // hA's wardPatientOptions since the Patients section below (rendered via
+  // WardPanelRest with h={hA}) is always hA's, regardless of which member
+  // ward the write-ups actually belong to.
+  let quickLookupId = $state("");
+  let quickLookupRecord = $derived((hA.wardPatientOptions || []).find((o) => o.id === quickLookupId));
+  let quickLookupTag = $derived(
+    !quickLookupRecord ? null :
+    quickLookupRecord.dischargeStatus
+      ? (quickLookupRecord.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : quickLookupRecord.dischargeStatus === "DEATH" ? "Death" : "Discharged")
+      : quickLookupRecord.admissionTag
+        ? (ADMISSION_TAG_LABEL[quickLookupRecord.admissionTag] || quickLookupRecord.admissionTag)
+        : "Active \u2014 no status tag"
+  );
 
   async function saveBoth() { await Promise.all([hA.saveReport(), hB.saveReport()]); }
   async function submitBoth() { await Promise.all([hA.submitReport(), hB.submitReport()]); }
@@ -45,6 +62,17 @@
           <input id={"prev-occ-" + h.w.key} type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
         </div>
       {/each}
+      {#if hA.wardPatientOptions && hA.wardPatientOptions.length > 0}
+        <div class="patient-field" style="min-width:220px;">
+          <label>Check a patient's status:</label>
+          <WardPatientPicker value={quickLookupId} options={hA.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
+          {#if quickLookupTag}
+            <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
+              {quickLookupTag}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
     <div class="table-wrap">
       <MergedShiftTable panels={hooks.map((h) => ({
