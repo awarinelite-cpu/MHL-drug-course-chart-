@@ -57,16 +57,7 @@
 
   {#if includePreviousOcc}
     <div class="card-box">
-      <div class="ward-select-row">
-        <h2 style="margin:0;">{showLabel && h.w?.label ? h.w.label : "Previous Occ"}</h2>
-        <span class={"status-pill " + h.pillClass}>{h.pillText}</span>
-      </div>
-      {#if showLabel && h.w?.label}<div style="font-size:13px;color:#6b7280;margin:6px 0 0;">Previous Occ</div>{/if}
-      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-top:4px;">
-        <div class="patient-field" style="max-width:140px;margin-top:0;">
-          <label>Previous Occ</label>
-          <input type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
-        </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
         {#if includeHeader && h.w}
           <div class="patient-field" style="margin-top:0;display:flex;flex-direction:column;justify-content:flex-end;">
             <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
