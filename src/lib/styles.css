@@ -867,7 +867,14 @@ td.stat-vac, td.stat-vac input { color: #dc2626; font-weight: 800; }
 .patient-field { margin-top: 8px; }
 .patient-field label { display: block; font-size: 16px; color: #555; margin-bottom: 3px; font-weight: bold; }
 .patient-field input, .patient-field textarea { width: 100%; padding: 7px; border: 1px solid var(--border); border-radius: 6px; font-size: 16px; box-sizing: border-box; font-family: inherit; }
-.patient-field textarea { min-height: 60px; resize: vertical; }
+.patient-field textarea { min-height: 60px; resize: vertical; overflow-y: hidden; }
+/* Diagnosis / Notes and the Night Update box start taller and grow with
+   their content (see $lib/helpers/autogrow.js) — `big` was previously
+   unused, so this box was stuck at the 60px min-height above no matter
+   how much was typed. `resize: vertical` is left in place as an extra
+   manual handle for mouse users; it has no effect on touch devices. */
+.patient-field textarea.big { min-height: 110px; }
+#nightUpdateInput { min-height: 140px; }
 .patient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .emr-lookup-note { font-size: 12px; margin-top: 3px; }
 .add-patient-btn { margin-top: 12px; width: 100%; padding: 10px; border: 2px dashed #93c5fd; background: var(--primary-light); color: var(--primary-active); border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; }

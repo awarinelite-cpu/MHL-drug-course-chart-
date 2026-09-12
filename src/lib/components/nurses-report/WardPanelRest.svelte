@@ -10,6 +10,7 @@
     PATIENT_FIELDS, PATIENT_STATUS_OPTIONS
   } from "$lib/helpers/nursesReportCommon.js";
   import { ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
+  import { autogrow } from "$lib/helpers/autogrow.js";
   import ShiftTable from "./ShiftTable.svelte";
   import DemographicsTable from "./DemographicsTable.svelte";
   import MaternityDemographicsTable from "./MaternityDemographicsTable.svelte";
@@ -145,6 +146,7 @@
                 <label for={f.key + "-" + p.id}>{f.label}:</label>
                 {#if f.type === "textarea"}
                   <textarea id={f.key + "-" + p.id} class={f.big ? "big" : ""} value={p[f.key] || ""}
+                    use:autogrow={{ min: f.big ? 110 : 60, max: 480 }}
                     oninput={(e) => f.key === "diagnosis" ? h.updateDiagnosisField(p.id, e.target.value) : h.updatePatientField(p.id, f.key, e.target.value)}></textarea>
                 {:else}
                   <input id={f.key + "-" + p.id} type="text" value={p[f.key] || ""} oninput={(e) => h.updatePatientField(p.id, f.key, e.target.value)}
@@ -177,7 +179,8 @@
     {#if h.editable && h.nightUpdateOpen}
       <div class="patient-field" style="margin-top:10px;">
         <label class="patient-note-label" for="nightUpdateInput" style="margin-top:0;">Night update:</label>
-        <textarea id="nightUpdateInput" placeholder="Type the night update here\u2026" style="min-height:140px;"
+        <textarea id="nightUpdateInput" placeholder="Type the night update here\u2026"
+          use:autogrow={{ min: 140, max: 520 }}
           value={h.wardDoc.nightUpdate} oninput={(e) => h.updateWardDoc({ nightUpdate: e.target.value })}></textarea>
       </div>
     {/if}
