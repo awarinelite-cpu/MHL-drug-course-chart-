@@ -14,8 +14,13 @@
     return "Something went wrong (" + (code || e.message || "no code") + "). Please try again.";
   }
 
-  let email = $state("");
-  let password = $state("");
+  // Deliberately not bind:value'd to state: browser autofill / password
+  // managers set the DOM value directly without always triggering a
+  // reactive update, and any two-way-bound input can get resynced back
+  // to its (still-empty) state on a re-render triggered by something
+  // else entirely, wiping what's visibly in the box before the user even
+  // reaches the Login button. Reading straight from the DOM via element
+  // refs at submit time makes the input itself the source of truth.
   /** @type {HTMLInputElement | undefined} */
   let emailEl = $state();
   /** @type {HTMLInputElement | undefined} */
@@ -24,12 +29,8 @@
   let msg = $state(null);
 
   async function doLogin() {
-    // Fall back to the actual DOM value in case the browser autofilled
-    // the field without triggering the bind:value update (state would still be empty).
-    const em = (email || emailEl?.value || "").trim();
-    const pw = password || passwordEl?.value || "";
-    email = em;
-    password = pw;
+    const em = (emailEl?.value || "").trim();
+    const pw = passwordEl?.value || "";
     msg = null;
     if (!em || !pw) { msg = { type: "error", text: "Enter your email and password." }; return; }
     try {
@@ -41,8 +42,7 @@
   }
 
   async function doReset() {
-    const em = (email || emailEl?.value || "").trim();
-    email = em;
+    const em = (emailEl?.value || "").trim();
     if (!em) { msg = { type: "error", text: 'Enter your email above first, then click "Forgot password?".' }; return; }
     try {
       await sendPasswordResetEmail(auth, em);
@@ -61,12 +61,12 @@
       <div class="field">
         <label for="login-email">Email</label>
         <input id="login-email" type="email" placeholder="name@example.com" autocomplete="username"
-          bind:this={emailEl} bind:value={email} />
+          bind:this={emailEl} />
       </div>
       <div class="field">
         <label for="login-password">Password</label>
         <input id="login-password" type="password" placeholder="Password" autocomplete="current-password"
-          bind:this={passwordEl} bind:value={password}
+          bind:this={passwordEl}
           onkeydown={(e) => { if (e.key === "Enter") doLogin(); }} />
       </div>
       <button class="btn btn-primary" style="width:100%" onclick={doLogin}>Log In</button>
