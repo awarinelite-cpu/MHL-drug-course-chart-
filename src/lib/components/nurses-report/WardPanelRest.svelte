@@ -9,6 +9,7 @@
   import {
     PATIENT_FIELDS, PATIENT_STATUS_OPTIONS
   } from "$lib/helpers/nursesReportCommon.js";
+  import { ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
   import ShiftTable from "./ShiftTable.svelte";
   import DemographicsTable from "./DemographicsTable.svelte";
   import MaternityDemographicsTable from "./MaternityDemographicsTable.svelte";
@@ -21,6 +22,22 @@
     includeShiftTable = true, includePreviousOcc = true, includeHeader = true, includeDemographics = true,
     onSave = null, onSubmit = null, useMaternityDemographics = false, locationOptions = null
   } = $props();
+
+  // Quick lookup only, not tied to any write-up — lets the nurse glance at
+  // a patient's roster tag (Discharge/Trans Out/Death/admission tag) right
+  // next to Previous Occ while tallying the Shift Statistics table above,
+  // instead of scrolling all the way down to the Patients section to find
+  // that same tag on a linked write-up.
+  let quickLookupId = $state("");
+  let quickLookupRecord = $derived((h.wardPatientOptions || []).find((o) => o.id === quickLookupId));
+  let quickLookupTag = $derived(
+    !quickLookupRecord ? null :
+    quickLookupRecord.dischargeStatus
+      ? (quickLookupRecord.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : quickLookupRecord.dischargeStatus === "DEATH" ? "Death" : "Discharged")
+      : quickLookupRecord.admissionTag
+        ? (ADMISSION_TAG_LABEL[quickLookupRecord.admissionTag] || quickLookupRecord.admissionTag)
+        : "Active \u2014 no status tag"
+  );
 </script>
 
 {#if includeHeader && h.topStatus.text}
@@ -50,8 +67,21 @@
         {/if}
       </div>
       {#if showLabel && h.w?.label}<div style="font-size:13px;color:#6b7280;margin:6px 0 0;">Previous Occ</div>{/if}
-      <div class="patient-field" style="max-width:140px;">
-        <input type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-top:4px;">
+        <div class="patient-field" style="max-width:140px;margin-top:0;">
+          <input type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
+        </div>
+        {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
+          <div class="patient-field" style="min-width:220px;margin-top:0;">
+            <label>Check a patient's status:</label>
+            <WardPatientPicker value={quickLookupId} options={h.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
+            {#if quickLookupTag}
+              <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
+                {quickLookupTag}
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     </div>
   {/if}
