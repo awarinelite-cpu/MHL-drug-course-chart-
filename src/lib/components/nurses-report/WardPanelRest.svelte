@@ -57,28 +57,27 @@
 
   {#if includePreviousOcc}
     <div class="card-box">
-      <div class="ward-select-row" style="justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <h2 style="margin:0;">{showLabel && h.w?.label ? h.w.label : "Previous Occ"}</h2>
-          <span class={"status-pill " + h.pillClass}>{h.pillText}</span>
-        </div>
-        {#if includeHeader && h.w}
-          <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
-            onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(h.w.key) + "&label=" + encodeURIComponent(h.w.label))}>
-            {"\uD83D\uDCC1 Archive"}
-          </button>
-        {/if}
-        {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
-          <label style="font-weight:bold;">Check a patient's status:</label>
-        {/if}
+      <div class="ward-select-row">
+        <h2 style="margin:0;">{showLabel && h.w?.label ? h.w.label : "Previous Occ"}</h2>
+        <span class={"status-pill " + h.pillClass}>{h.pillText}</span>
       </div>
       {#if showLabel && h.w?.label}<div style="font-size:13px;color:#6b7280;margin:6px 0 0;">Previous Occ</div>{/if}
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-top:4px;">
         <div class="patient-field" style="max-width:140px;margin-top:0;">
+          <label>Previous Occ</label>
           <input type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
         </div>
+        {#if includeHeader && h.w}
+          <div class="patient-field" style="margin-top:0;display:flex;flex-direction:column;justify-content:flex-end;">
+            <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
+              onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(h.w.key) + "&label=" + encodeURIComponent(h.w.label))}>
+              {"\uD83D\uDCC1 Archive"}
+            </button>
+          </div>
+        {/if}
         {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
           <div class="patient-field" style="min-width:220px;margin-top:0;">
+            <label>Check a patient's status:</label>
             <WardPatientPicker value={quickLookupId} options={h.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
             {#if quickLookupTag}
               <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
