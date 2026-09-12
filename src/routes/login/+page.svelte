@@ -24,11 +24,13 @@
   let msg = $state(null);
 
   async function doLogin() {
-    msg = null;
     // Fall back to the actual DOM value in case the browser autofilled
     // the field without triggering the bind:value update (state would still be empty).
     const em = (email || emailEl?.value || "").trim();
     const pw = password || passwordEl?.value || "";
+    email = em;
+    password = pw;
+    msg = null;
     if (!em || !pw) { msg = { type: "error", text: "Enter your email and password." }; return; }
     try {
       await signInWithEmailAndPassword(auth, em, pw);
@@ -40,6 +42,7 @@
 
   async function doReset() {
     const em = (email || emailEl?.value || "").trim();
+    email = em;
     if (!em) { msg = { type: "error", text: 'Enter your email above first, then click "Forgot password?".' }; return; }
     try {
       await sendPasswordResetEmail(auth, em);
