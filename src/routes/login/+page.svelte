@@ -28,6 +28,10 @@
   /** @type {{type: 'error'|'info', text: string} | null} */
   let msg = $state(null);
 
+  // No Enter-to-submit on the password field anymore, and the button only
+  // reacts to e.isTrusted clicks (a real tap/click, never a script- or
+  // autofill-simulated one). Login now only ever fires from an explicit,
+  // genuine press of this button.
   async function doLogin() {
     const em = (emailEl?.value || "").trim();
     const pw = passwordEl?.value || "";
@@ -66,10 +70,9 @@
       <div class="field">
         <label for="login-password">Password</label>
         <input id="login-password" type="password" placeholder="Password" autocomplete="current-password"
-          bind:this={passwordEl}
-          onkeydown={(e) => { if (e.key === "Enter") doLogin(); }} />
+          bind:this={passwordEl} />
       </div>
-      <button class="btn btn-primary" style="width:100%" onclick={doLogin}>Log In</button>
+      <button class="btn btn-primary" style="width:100%" onclick={(e) => { if (e.isTrusted) doLogin(); }}>Log In</button>
 
       <div style="text-align:center;margin-top:12px;">
         <a href="##" onclick={(e) => { e.preventDefault(); doReset(); }} style="font-size:13px;color:#2563eb;">Forgot password?</a>
