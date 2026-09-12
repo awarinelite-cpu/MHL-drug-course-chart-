@@ -577,7 +577,7 @@
     // automatically, the moment the patient is actually discharged — never
     // typed in manually.
     let dischargeDate = fields.f_discharge;
-    if (reason === "discharged" && !dischargeDate) {
+    if ((reason === "discharged" || reason === "died") && !dischargeDate) {
       dischargeDate = new Date().toISOString().slice(0, 10);
       fields = { ...fields, f_discharge: dischargeDate };
     }
@@ -938,6 +938,7 @@
             <option value="referred">Referred to another hospital</option>
             <option value="transferred">Transferred to another ward</option>
             <option value="discharged">Discharged</option>
+            <option value="died">Death</option>
           </select>
           {#if statusAction === "transferred"}
             <select style="width:auto;min-width:220px;" value={transferWard} onchange={(e) => transferWard = e.target.value}>

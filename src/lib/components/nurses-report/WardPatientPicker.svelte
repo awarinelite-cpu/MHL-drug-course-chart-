@@ -42,7 +42,7 @@
                 {(o.name || "Unnamed") + (o.emr ? " (" + o.emr + ")" : "")}
               </span>
               {#if o.dischargeStatus}
-                <div class="ward-patient-picker-tag">{o.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : "Discharged"}</div>
+                <div class="ward-patient-picker-tag">{o.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : o.dischargeStatus === "DEATH" ? "Death" : "Discharged"}</div>
               {:else if o.admissionTag}
                 <div class="ward-patient-picker-tag admission">{ADMISSION_TAG_LABEL[o.admissionTag] || o.admissionTag}</div>
               {/if}

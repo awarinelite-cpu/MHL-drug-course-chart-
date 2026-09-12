@@ -39,7 +39,7 @@ function blankChartRows() { return Array(18).fill(null).map(() => defaultRow());
 // Deliberately not set for 'transferred': a ward transfer already has its
 // own pendingTransferMhl marker and the patient is expected to keep
 // appearing normally once accepted onto the receiving MHL ward.
-export const ROSTER_TAG_FOR_REASON = { discharged: 'DISCHARGE', referred: 'TRANS OUT' };
+export const ROSTER_TAG_FOR_REASON = { discharged: 'DISCHARGE', referred: 'TRANS OUT', died: 'DEATH' };
 
 // Clears a patient's MHL ward placement (wardMhl/pedBedTypeMhl — not 68's
 // own ward/pedBedType, see wardCensus.js) once their discharge/trans-out
@@ -202,7 +202,7 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
   // Discharge Date is locked (readonly) so it can only ever be set here,
   // automatically, the moment the patient is actually discharged.
   let dischargeDate = drugChartData.f_discharge;
-  if (reason === 'discharged' && !dischargeDate) {
+  if ((reason === 'discharged' || reason === 'died') && !dischargeDate) {
     dischargeDate = new Date().toISOString().slice(0, 10);
   }
 

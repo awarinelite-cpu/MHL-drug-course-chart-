@@ -15,7 +15,7 @@
   import Topbar from "$lib/components/Topbar.svelte";
   import PatientBanner from "$lib/components/PatientBanner.svelte";
 
-  const STATUS_LABELS = { referred: "Referred to another hospital", transferred: "Transferred to another ward", discharged: "Discharged" };
+  const STATUS_LABELS = { referred: "Referred to another hospital", transferred: "Transferred to another ward", discharged: "Discharged", died: "Death" };
 
   let {
     title, collectionName, columns, deriveRows = null, summary = null,

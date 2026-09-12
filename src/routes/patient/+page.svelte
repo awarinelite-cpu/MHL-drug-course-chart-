@@ -267,6 +267,7 @@
               <option value="discharged">{STATUS_LABELS.discharged}</option>
               <option value="transferred">{STATUS_LABELS.transferred}</option>
               <option value="referred">{STATUS_LABELS.referred}</option>
+              <option value="died">{STATUS_LABELS.died}</option>
             </select>
             {#if statusAction === "transferred"}
               <select style="width: auto; min-width: 220px;" bind:value={transferWard}>
