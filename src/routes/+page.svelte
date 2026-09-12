@@ -18,6 +18,15 @@
 
   function normEmr(emr) { return (emr || "").trim().toLowerCase(); }
 
+  // Ward-list status badge for patients tagged DISCHARGE/TRANS OUT/DEATH by
+  // applyPatientStatus (see patientAdmissionStatus.js) but still on the ward
+  // roster, awaiting the ward nurse's closing report before
+  // closeOutDischargedPatient clears their ward field and drops them off
+  // this list. Reuses the same badge-* classes Overview/Admission already
+  // use for archived-admission status pills. Ported from Home.jsx's
+  // PendingDischargeBadge.
+  const DISCHARGE_BADGE_CLASS = { DISCHARGE: "badge-discharged", "TRANS OUT": "badge-referred", DEATH: "badge-died" };
+
   const EMPTY_FORM = { name: "", emr: "", diagnosis: "", ward: "", pedBedType: "", age: "", hospNo: "", admissionDate: "", allergies: "", insurance: "" };
 
   // Wards are stored/compared in ALL CAPS; this is purely for display so
@@ -412,6 +421,15 @@
   function focusSearch() { searchInputEl && searchInputEl.focus(); }
 </script>
 
+{#snippet pendingDischargeBadge(status)}
+  {#if status}
+    <br />
+    <span class={"oi-badge " + (DISCHARGE_BADGE_CLASS[status] || "badge-discharged")} style="font-size:12px;padding:2px 8px;margin-top:2px;">
+      {status} — awaiting ward report
+    </span>
+  {/if}
+{/snippet}
+
 <Topbar brand="MILITARY HOSPITAL LAGOS Ward Charts">
   <a class="whoami-link" onclick={(e) => { e.preventDefault(); goto("/profile"); }} href="/profile">
     <span class="whoami-avatar">{@html authState.profile ? avatarMarkup(authState.profile, 32) : ""}</span>
@@ -583,7 +601,7 @@
             {#if g.patients.length === 0}<div style="font-size:12px;color:#888;">No patients yet.</div>{/if}
             {#each g.patients as p (p.id)}
               <div class="search-result-item" onclick={() => openPatient(p)}>
-                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}</span>
+                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
                 <span>{p.diagnosis || ""}</span>
               </div>
             {/each}
@@ -596,7 +614,7 @@
             </div>
             {#each pedGroups.unassigned as p (p.id)}
               <div class="search-result-item" onclick={() => openPatient(p)}>
-                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}</span>
+                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
                 <span>{p.diagnosis || ""}</span>
               </div>
             {/each}
@@ -606,7 +624,7 @@
       {#if patientsLoaded && visiblePatients.length > 0 && !pedGroups}
         {#each visiblePatients as p (p.id)}
           <div class="search-result-item" onclick={() => openPatient(p)}>
-            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}</span>
+            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
             <span>{p.diagnosis || ""}</span>
           </div>
         {/each}
