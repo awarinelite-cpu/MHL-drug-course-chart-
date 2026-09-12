@@ -39,7 +39,7 @@
           <div class="ward-patient-picker-row" onclick={() => pick(o.id)}>
             <div>
               <span class={"ward-patient-picker-name" + (o.id === value ? " is-selected" : "")}>
-                {(o.name || "Unnamed") + (o.emr ? " (" + o.emr + ")" : "")}
+                {(o.name || "Unnamed") + (o.emr ? " (" + o.emr + ")" : "")}{o.location ? " \u2014 " + o.location : ""}
               </span>
               {#if o.dischargeStatus}
                 <div class="ward-patient-picker-tag">{o.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : o.dischargeStatus === "DEATH" ? "Death" : "Discharged"}</div>

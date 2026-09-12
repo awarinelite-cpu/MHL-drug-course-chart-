@@ -27,12 +27,23 @@
   const bothLoaded = $derived(hooks.every((h) => h.wardDoc));
   const mergedDemographics = group.demographicsVariant === "merged";
 
-  // Same quick lookup as WardPanelRest's own Previous Occ card — reads off
-  // hA's wardPatientOptions since the Patients section below (rendered via
-  // WardPanelRest with h={hA}) is always hA's, regardless of which member
-  // ward the write-ups actually belong to.
+  // Same idea as WardPanelRest's own Previous Occ card, but merges BOTH
+  // member wards' patients — unlike the "Select Patient" list further
+  // down (which stays hA-only, since every write-up saves under hA's
+  // doc), this is read-only lookup, so there's no reason to hide Cot
+  // patients from it. For Maternity, hB (Cots) never has real patient
+  // records (newborns aren't charted — see wardNameMatch.js), so this is
+  // effectively just hA's list there; for Paed, Bed and Cot are both real
+  // wards with their own patients, tagged here by member label so a nurse
+  // can tell which is which.
   let quickLookupId = $state("");
-  let quickLookupRecord = $derived((hA.wardPatientOptions || []).find((o) => o.id === quickLookupId));
+  let quickLookupOptions = $derived(
+    [
+      ...(hA.wardPatientOptions || []).map((o) => ({ ...o, location: hA.w?.label })),
+      ...(hB.wardPatientOptions || []).map((o) => ({ ...o, location: hB.w?.label }))
+    ].sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+  );
+  let quickLookupRecord = $derived(quickLookupOptions.find((o) => o.id === quickLookupId));
   let quickLookupTag = $derived(
     !quickLookupRecord ? null :
     quickLookupRecord.dischargeStatus
@@ -62,13 +73,13 @@
           <input id={"prev-occ-" + h.w.key} type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
         </div>
       {/each}
-      {#if hA.wardPatientOptions && hA.wardPatientOptions.length > 0}
+      {#if quickLookupOptions.length > 0}
         <div class="patient-field" style="min-width:220px;">
           <label>Check a patient's status:</label>
-          <WardPatientPicker value={quickLookupId} options={hA.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
+          <WardPatientPicker value={quickLookupId} options={quickLookupOptions} onSelect={(id) => quickLookupId = id} />
           {#if quickLookupTag}
             <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
-              {quickLookupTag}
+              {quickLookupTag}{quickLookupRecord.location ? " \u2014 " + quickLookupRecord.location : ""}
             </div>
           {/if}
         </div>
