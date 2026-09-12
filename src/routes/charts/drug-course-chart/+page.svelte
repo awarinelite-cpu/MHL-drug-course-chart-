@@ -13,7 +13,8 @@
     ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS, STATUS_LABELS, WARD_OPTIONS,
     actionColor, defaultRow, dueLabelFor, withDrugCompletionChecked, computeRouteFromSno,
     parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
-    diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText, abbreviateReason
+    diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText, abbreviateReason,
+    parseWeeklyFrequency, weeklyDosesGivenThisWeek
   } from "$lib/helpers/drugChartHelpers.js";
   import { ROSTER_TAG_FOR_REASON, clearAllocationsForPatient } from "$lib/helpers/patientAdmissionStatus.js";
 
@@ -768,6 +769,8 @@
             {#each drugs as drug, i (i)}
               {@const due = dueLabelFor(drug, i, chartRows, now)}
               {@const seq = parseDoseSequence(drug.frequency)}
+              {@const weeklyN = parseWeeklyFrequency(drug.frequency)}
+              {@const weeklyGiven = weeklyN && weeklyN > 1 ? weeklyDosesGivenThisWeek(chartRows, i, now) : 0}
               {@const editing = drugsEditMode && editingDrugRows[i]}
               {@const showPencil = drugsEditMode && !editing}
               {#if editing}
@@ -822,6 +825,11 @@
                           {@const given = idx < administrationTimesFor(chartRows, i).length}
                           <span class={"dose-seq-pill " + (given ? "given" : "pending")}>{hr}h{given ? " ✓" : ""}</span>
                         {/each}
+                      </div>
+                    {/if}
+                    {#if weeklyGiven}
+                      <div class="dose-seq-badges" title={weeklyGiven + " of " + weeklyN + " doses given this week"}>
+                        <span class="dose-seq-pill given">{"✅".repeat(Math.min(weeklyGiven, weeklyN))}</span>
                       </div>
                     {/if}
                   </td>
