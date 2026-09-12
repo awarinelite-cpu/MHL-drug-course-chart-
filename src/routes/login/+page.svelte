@@ -16,15 +16,22 @@
 
   let email = $state("");
   let password = $state("");
+  /** @type {HTMLInputElement | undefined} */
+  let emailEl = $state();
+  /** @type {HTMLInputElement | undefined} */
+  let passwordEl = $state();
   /** @type {{type: 'error'|'info', text: string} | null} */
   let msg = $state(null);
 
   async function doLogin() {
     msg = null;
-    const em = email.trim();
-    if (!em || !password) { msg = { type: "error", text: "Enter your email and password." }; return; }
+    // Fall back to the actual DOM value in case the browser autofilled
+    // the field without triggering the bind:value update (state would still be empty).
+    const em = (email || emailEl?.value || "").trim();
+    const pw = password || passwordEl?.value || "";
+    if (!em || !pw) { msg = { type: "error", text: "Enter your email and password." }; return; }
     try {
-      await signInWithEmailAndPassword(auth, em, password);
+      await signInWithEmailAndPassword(auth, em, pw);
       goto("/");
     } catch (e) {
       msg = { type: "error", text: friendlyError(e) };
@@ -32,7 +39,7 @@
   }
 
   async function doReset() {
-    const em = email.trim();
+    const em = (email || emailEl?.value || "").trim();
     if (!em) { msg = { type: "error", text: 'Enter your email above first, then click "Forgot password?".' }; return; }
     try {
       await sendPasswordResetEmail(auth, em);
@@ -51,12 +58,12 @@
       <div class="field">
         <label for="login-email">Email</label>
         <input id="login-email" type="email" placeholder="name@example.com" autocomplete="username"
-          bind:value={email} />
+          bind:this={emailEl} bind:value={email} />
       </div>
       <div class="field">
         <label for="login-password">Password</label>
         <input id="login-password" type="password" placeholder="Password" autocomplete="current-password"
-          bind:value={password}
+          bind:this={passwordEl} bind:value={password}
           onkeydown={(e) => { if (e.key === "Enter") doLogin(); }} />
       </div>
       <button class="btn btn-primary" style="width:100%" onclick={doLogin}>Log In</button>
