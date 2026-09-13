@@ -285,13 +285,17 @@ export const PATIENT_STATUS_OPTIONS = [
   "NEW PATIENT",
   "TRANS IN FROM A&E",
   "DEATH",
+  "DAMA",
+  "ABSC",
   "ONGOING RX"
 ];
 
 export const PATIENT_STATUS_ARCHIVE_REASON = {
   "DISCHARGE": "discharged",
   "TRANS OUT": "referred",
-  "DEATH": "died"
+  "DEATH": "died",
+  "DAMA": "dama",
+  "ABSC": "absconded"
 };
 
 function pad(n) { return String(n).padStart(2, "0"); }

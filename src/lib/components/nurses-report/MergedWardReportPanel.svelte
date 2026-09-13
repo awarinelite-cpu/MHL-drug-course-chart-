@@ -47,7 +47,7 @@
   let quickLookupTag = $derived(
     !quickLookupRecord ? null :
     quickLookupRecord.dischargeStatus
-      ? (quickLookupRecord.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : quickLookupRecord.dischargeStatus === "DEATH" ? "Death" : "Discharged")
+      ? (quickLookupRecord.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : quickLookupRecord.dischargeStatus === "DEATH" ? "Death" : quickLookupRecord.dischargeStatus === "DAMA" ? "DAMA" : quickLookupRecord.dischargeStatus === "ABSC" ? "Absconded" : "Discharged")
       : quickLookupRecord.admissionTag
         ? (ADMISSION_TAG_LABEL[quickLookupRecord.admissionTag] || quickLookupRecord.admissionTag)
         : "Active \u2014 no status tag"

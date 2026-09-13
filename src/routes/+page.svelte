@@ -15,6 +15,7 @@
   import { wardHeadcount } from "$lib/helpers/wardCensus.js";
   import { WARDS } from "$lib/helpers/nursesReportCommon.js";
   import { loadWardPatients, loadIncomingTransfers, searchPatients, findPatientByEmrExact } from "$lib/helpers/patientDirectory.js";
+  import { activeAdmissionTag, ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
 
   function normEmr(emr) { return (emr || "").trim().toLowerCase(); }
 
@@ -25,7 +26,15 @@
   // this list. Reuses the same badge-* classes Overview/Admission already
   // use for archived-admission status pills. Ported from Home.jsx's
   // PendingDischargeBadge.
-  const DISCHARGE_BADGE_CLASS = { DISCHARGE: "badge-discharged", "TRANS OUT": "badge-referred", DEATH: "badge-died" };
+  const DISCHARGE_BADGE_CLASS = { DISCHARGE: "badge-discharged", "TRANS OUT": "badge-referred", DEATH: "badge-died", DAMA: "badge-dama", ABSC: "badge-absconded" };
+
+  // Ward-list badge for a patient's recent-admission tag (NEW PATIENT /
+  // TRANS IN from A&E) — see activeAdmissionTag/ADMISSION_TAG_LABEL in
+  // patientAdmissionStatus.js. Shown the same way pendingDischargeBadge
+  // shows an exit status, so a nurse glancing at the ward list can see
+  // both a patient's arrival and their departure at a glance. Ported from
+  // Home.jsx's AdmissionTagBadge.
+  const ADMISSION_TAG_BADGE_CLASS = { AE_TRANSFER: "badge-active", NEW_PATIENT: "badge-active" };
 
   const EMPTY_FORM = { name: "", emr: "", diagnosis: "", ward: "", pedBedType: "", age: "", hospNo: "", admissionDate: "", allergies: "", insurance: "" };
 
@@ -430,6 +439,16 @@
   {/if}
 {/snippet}
 
+{#snippet admissionTagBadge(patient)}
+  {@const tag = activeAdmissionTag(patient)}
+  {#if tag}
+    <br />
+    <span class={"oi-badge " + (ADMISSION_TAG_BADGE_CLASS[tag] || "badge-active")} style="font-size:12px;padding:2px 8px;margin-top:2px;">
+      {ADMISSION_TAG_LABEL[tag] || tag}
+    </span>
+  {/if}
+{/snippet}
+
 <Topbar brand="MILITARY HOSPITAL LAGOS">
   <a class="whoami-link" onclick={(e) => { e.preventDefault(); goto("/profile"); }} href="/profile">
     <span class="whoami-avatar">{@html authState.profile ? avatarMarkup(authState.profile, 32) : ""}</span>
@@ -601,7 +620,7 @@
             {#if g.patients.length === 0}<div style="font-size:12px;color:#888;">No patients yet.</div>{/if}
             {#each g.patients as p (p.id)}
               <div class="search-result-item" onclick={() => openPatient(p)}>
-                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
+                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
                 <span>{p.diagnosis || ""}</span>
               </div>
             {/each}
@@ -614,7 +633,7 @@
             </div>
             {#each pedGroups.unassigned as p (p.id)}
               <div class="search-result-item" onclick={() => openPatient(p)}>
-                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
+                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
                 <span>{p.diagnosis || ""}</span>
               </div>
             {/each}
@@ -624,7 +643,7 @@
       {#if patientsLoaded && visiblePatients.length > 0 && !pedGroups}
         {#each visiblePatients as p (p.id)}
           <div class="search-result-item" onclick={() => openPatient(p)}>
-            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
+            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
             <span>{p.diagnosis || ""}</span>
           </div>
         {/each}
