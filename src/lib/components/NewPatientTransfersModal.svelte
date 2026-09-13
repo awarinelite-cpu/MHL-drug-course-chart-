@@ -37,7 +37,7 @@
     errMsg = "";
     busyId = p.id;
     try {
-      await rejectTransfer(p.id);
+      await rejectTransfer(p.id, p.pendingTransferMhl);
       onResolved(p.id);
     } catch (e) {
       errMsg = "Could not reject " + (p.name || "this patient") + ": " + (e.code || e.message);

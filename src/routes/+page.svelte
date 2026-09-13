@@ -33,12 +33,14 @@
   const DISCHARGE_BADGE_CLASS = { DISCHARGE: "badge-discharged", "TRANS OUT": "badge-referred", DEATH: "badge-died", DAMA: "badge-dama", ABSC: "badge-absconded" };
 
   // Ward-list badge for a patient's recent-admission tag (NEW PATIENT /
-  // TRANS IN from A&E) — see activeAdmissionTag/ADMISSION_TAG_LABEL in
-  // patientAdmissionStatus.js. Shown the same way pendingDischargeBadge
-  // shows an exit status, so a nurse glancing at the ward list can see
-  // both a patient's arrival and their departure at a glance. Ported from
-  // Home.jsx's AdmissionTagBadge.
-  const ADMISSION_TAG_BADGE_CLASS = { AE_TRANSFER: "badge-active", NEW_PATIENT: "badge-active" };
+  // TRANS IN from A&E / TRANSFER REJECTED) — see activeAdmissionTag/
+  // ADMISSION_TAG_LABEL in patientAdmissionStatus.js. Shown the same way
+  // pendingDischargeBadge shows an exit status, so a nurse glancing at
+  // the ward list can see both a patient's arrival and their departure
+  // at a glance. Ported from Home.jsx's AdmissionTagBadge.
+  // TRANSFER_REJECTED uses the existing .badge-transferred color (amber)
+  // since it's neither a fresh arrival (blue) nor an exit.
+  const ADMISSION_TAG_BADGE_CLASS = { AE_TRANSFER: "badge-active", NEW_PATIENT: "badge-active", TRANSFER_REJECTED: "badge-transferred" };
 
   const EMPTY_FORM = { name: "", emr: "", diagnosis: "", ward: "", pedBedType: "", age: "", hospNo: "", admissionDate: "", allergies: "", insurance: "" };
 
@@ -497,9 +499,10 @@
 {#snippet admissionTagBadge(patient)}
   {@const tag = activeAdmissionTag(patient)}
   {#if tag}
+    {@const label = tag === "TRANSFER_REJECTED" && patient.transferRejectedByWard ? `TRANSFER REJECTED by ${patient.transferRejectedByWard}` : (ADMISSION_TAG_LABEL[tag] || tag)}
     <br />
     <span class={"oi-badge " + (ADMISSION_TAG_BADGE_CLASS[tag] || "badge-active")} style="font-size:12px;padding:2px 8px;margin-top:2px;">
-      {ADMISSION_TAG_LABEL[tag] || tag}
+      {label}
     </span>
   {/if}
 {/snippet}

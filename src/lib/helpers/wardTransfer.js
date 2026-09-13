@@ -55,14 +55,24 @@ export async function acceptTransfer(patientId, pendingTransferMhl, pedBedType) 
   await updateDoc(doc(db, "patients", patientId), updates);
 }
 
-// Rejecting (e.g. no bed space) just clears the pending transfer. The
+// Rejecting (e.g. no bed space) clears the pending transfer. The
 // patient's `wardMhl` field was never actually changed while pending, so
 // they reappear on their original MHL ward's list automatically (or stay
-// out of every MHL ward list if they had no wardMhl to begin with) —
-// nothing else needs to be undone.
-export async function rejectTransfer(patientId) {
+// out of every MHL ward list if they had no wardMhl to begin with) — but
+// with nothing else, the sending ward would have no way to tell
+// "rejected" apart from "nobody's looked at it yet". Tagging
+// admissionSource here (shared with 68 — see the file banner above)
+// reuses the same TRANS IN/NEW PATIENT mechanism from
+// patientAdmissionStatus.js to surface a visible tag on the patient's
+// card, self-clearing after 24h or on the next Ward Report write-up,
+// same as those other tags. transferRejectedByWard records which ward
+// rejected it, so the badge can say who instead of just "rejected".
+export async function rejectTransfer(patientId, pendingTransferMhl) {
   await updateDoc(doc(db, "patients", patientId), {
     pendingTransferMhl: deleteField(),
+    admissionSource: "TRANSFER_REJECTED",
+    admissionSourceAt: serverTimestamp(),
+    transferRejectedByWard: (pendingTransferMhl && pendingTransferMhl.toWard) || "",
     updatedAt: serverTimestamp()
   });
 }
