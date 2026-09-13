@@ -281,7 +281,7 @@
 </script>
 
 {#if authState.profile}
-  <Topbar brand="MILITARY HOSPITAL LAGOS Ward Charts — Admin">
+  <Topbar brand="MILITARY HOSPITAL LAGOS — Admin">
     <button class="btn btn-secondary" style="padding:6px 12px;" onclick={goBack}>Back Home</button>
     <button class="btn btn-secondary" style="padding:6px 12px;" onclick={handleLogout}>Log Out</button>
   </Topbar>

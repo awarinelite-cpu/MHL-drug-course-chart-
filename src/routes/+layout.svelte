@@ -94,7 +94,7 @@
 </script>
 
 <svelte:head>
-  <title>MILITARY HOSPITAL LAGOS Ward Charts</title>
+  <title>MILITARY HOSPITAL LAGOS</title>
 </svelte:head>
 
 <OfflineBanner />
