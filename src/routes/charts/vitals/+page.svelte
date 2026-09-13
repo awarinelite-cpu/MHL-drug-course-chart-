@@ -14,7 +14,8 @@
   };
 
   const columns = [
-    { key: "time", label: "Time", type: "datetime-local" },
+    { key: "date", label: "Date", type: "date" },
+    { key: "time", label: "Time", type: "time" },
     { key: "temp", label: "Temp (\u00b0C)", type: "text", abnormal: isAbnormalTemp },
     { key: "pulse", label: "Pulse", type: "text", abnormal: isAbnormalPulse },
     { key: "resp", label: "Resp Rate", type: "text", abnormal: isAbnormalResp },
