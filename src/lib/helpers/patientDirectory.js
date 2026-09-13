@@ -60,6 +60,26 @@ export async function loadWardPatients(wardLabel) {
   return snap.docs.map(toRecord).filter((p) => !p.pendingTransferMhl);
 }
 
+// Patients across several wards at once (e.g. Overall Nurse re-seeding
+// several wards' census figures together) — one indexed query per unique
+// ward label, run in parallel, instead of a getDocs(collection(db,
+// 'patients')) full-hospital scan. Mid-transfer patients are excluded,
+// same rule as loadWardPatients above. Callers that need per-ward
+// headcounts (wardHeadcount from wardCensus.js) can filter the combined
+// array down further by bedType themselves.
+export async function loadPatientsForWardLabels(wardLabels) {
+  const uniqueLabels = [...new Set((wardLabels || []).filter(Boolean))];
+  if (!uniqueLabels.length) return [];
+  const results = await Promise.all(
+    uniqueLabels.map((label) =>
+      getDocs(query(collection(db, "patients"), where("wardMhl", "==", label)))
+    )
+  );
+  const out = [];
+  results.forEach((snap) => snap.forEach((d) => out.push(d.data())));
+  return out.filter((p) => !p.pendingTransferMhl);
+}
+
 // Patients with a transfer pending onto this ward — queries the nested
 // pendingTransferMhl.toWard field directly rather than scanning every
 // patient for one; Firestore indexes map subfields for equality
