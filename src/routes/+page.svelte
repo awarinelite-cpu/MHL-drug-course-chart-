@@ -500,8 +500,9 @@
   {@const tag = activeAdmissionTag(patient)}
   {#if tag}
     {@const label = tag === "TRANSFER_REJECTED" && patient.transferRejectedByWard ? `TRANSFER REJECTED by ${patient.transferRejectedByWard}` : (ADMISSION_TAG_LABEL[tag] || tag)}
+    {@const blinkClass = tag === "TRANSFER_REJECTED" ? " badge-emergency-blink" : ""}
     <br />
-    <span class={"oi-badge " + (ADMISSION_TAG_BADGE_CLASS[tag] || "badge-active")} style="font-size:12px;padding:2px 8px;margin-top:2px;">
+    <span class={"oi-badge " + (ADMISSION_TAG_BADGE_CLASS[tag] || "badge-active") + blinkClass} style="font-size:12px;padding:2px 8px;margin-top:2px;">
       {label}
     </span>
   {/if}
