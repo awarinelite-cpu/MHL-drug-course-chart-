@@ -946,7 +946,7 @@ export function diffFields(before, after, fieldLabels) {
   Object.keys(fieldLabels).forEach(f => {
     const a = (before[f] || '').toString();
     const b = (after[f] || '').toString();
-    if (a !== b) changes.push(fieldLabels[f] + ': "' + (a || '—') + '" \u2192 "' + (b || '—') + '"');
+    if (a !== b) changes.push(fieldLabels[f] + ': ' + (b || '—'));
   });
   return changes;
 }

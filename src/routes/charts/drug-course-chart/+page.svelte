@@ -282,7 +282,7 @@
   function saveDiagnosisEdit() {
     const oldVal = (fields.f_diagnosis || "").trim();
     const newVal = diagEditText.trim();
-    if (oldVal !== newVal) logAudit('Diagnosis: "' + (oldVal || "—") + '" → "' + (newVal || "—") + '"');
+    if (oldVal !== newVal) logAudit("Diagnosis edited\nDiagnosis: " + (newVal || "—"));
     updateField("f_diagnosis", diagEditText);
     diagModalOpen = false;
   }
@@ -297,8 +297,8 @@
     const wasBlank = !before.name && !before.route && !before.frequency && !before.action && !before.duration;
     const changes = diffFields(before, after, { name: "Name", route: "Route", frequency: "Frequency", action: "Action", duration: "Duration" });
     if (changes.length) {
-      const prefix = wasBlank ? ("Drug added (#" + (i + 1) + "): ") : ("Drug #" + (i + 1) + " edited: ");
-      logAudit(prefix + changes.join(", "));
+      const prefix = wasBlank ? ("Drug added (#" + (i + 1) + ")") : ("Drug #" + (i + 1) + " edited");
+      logAudit(prefix + "\n" + changes.join("\n"));
     }
     delete drugRowSnapshots[i];
     const n = { ...editingDrugRows }; delete n[i]; editingDrugRows = n;
@@ -350,8 +350,8 @@
     const wasBlank = !before.sno && !before.date && !before.time && !(before.skipped || []).length;
     const changes = diffFields(before, row || {}, { date: "Date", sno: "Drug S/N", time: "Time", dose: "Dose", route: "Route", remark: "Remark" });
     if (changes.length) {
-      const prefix = wasBlank ? ("Dose recorded (row " + (i + 1) + "): ") : ("Chart entry edited (row " + (i + 1) + "): ");
-      logAudit(prefix + changes.join(", "));
+      const prefix = wasBlank ? ("Dose recorded (Row " + (i + 1) + ")") : ("Chart entry edited (Row " + (i + 1) + ")");
+      logAudit(prefix + "\n" + changes.join("\n"));
     }
     delete chartRowSnapshots[i];
     const n = { ...editingChartRows }; delete n[i]; editingChartRows = n;
