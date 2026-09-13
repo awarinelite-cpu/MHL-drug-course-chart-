@@ -4,12 +4,12 @@
   import { goto } from "$app/navigation";
   import { collection, query, where, getDocs } from "firebase/firestore";
   import { db } from "$lib/firebase.js";
+  import { formatDateTime } from "$lib/helpers/time-format.svelte.js";
   import Topbar from "$lib/components/Topbar.svelte";
 
   function fmtTimestamp(ts) {
     if (!ts || !ts.toDate) return "";
-    const d = ts.toDate();
-    return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return formatDateTime(ts.toDate());
   }
 
   function goBack() {

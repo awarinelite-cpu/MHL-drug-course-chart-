@@ -7,13 +7,14 @@
   import { collection, getDocs, query, where, deleteDoc, doc } from "firebase/firestore";
   import { db } from "$lib/firebase.js";
   import { authState } from "$lib/stores/auth.svelte.js";
+  import { formatTime } from "$lib/helpers/time-format.svelte.js";
   import Topbar from "$lib/components/Topbar.svelte";
 
   function fmtWhen(ts, shift) {
     if (!ts || typeof ts.toDate !== "function") return shift || "";
     const d = ts.toDate();
     const dateStr = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-    const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const timeStr = formatTime(d);
     return dateStr + ", " + timeStr + (shift ? " · " + shift + " shift" : "");
   }
 

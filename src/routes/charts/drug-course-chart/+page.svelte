@@ -17,6 +17,7 @@
     parseWeeklyFrequency, weeklyDosesGivenThisWeek
   } from "$lib/helpers/drugChartHelpers.js";
   import { ROSTER_TAG_FOR_REASON, clearAllocationsForPatient } from "$lib/helpers/patientAdmissionStatus.js";
+  import { formatTime, formatDateTime } from "$lib/helpers/time-format.svelte.js";
 
   const FIELD_IDS = ["f_admission", "f_discharge", "f_diagnosis"];
 
@@ -247,7 +248,7 @@
     setDoc(chartRefPath, data, { merge: true }).catch((e) => {
       saveStatus = "Save failed: " + (e.code || e.message);
     });
-    saveStatus = "Saved " + new Date().toLocaleTimeString();
+    saveStatus = "Saved " + formatTime(new Date());
     return Promise.resolve();
   }
 
@@ -560,7 +561,7 @@
             fromWard: patient?.wardMhl || "",
             transferredByName: authState.profile?.name || "",
             transferredAt: serverTimestamp(),
-            transferredAtDisplay: new Date().toLocaleString()
+            transferredAtDisplay: formatDateTime(new Date(), { year: true })
           },
           updatedAt: serverTimestamp()
         });
@@ -639,7 +640,7 @@
       archiveReason: reason,
       archiveReasonLabel: label,
       archivedAt: serverTimestamp(),
-      archivedAtDisplay: new Date().toLocaleString(),
+      archivedAtDisplay: formatDateTime(new Date(), { year: true }),
       drugCourseChart: drugChartData,
       bloodGlucose: bgData,
       vitals: vitalsArr,
@@ -1090,7 +1091,7 @@
         {/if}
         {#each verbalOrders as order, i}
           <div class="audit-entry">
-            <div class="audit-meta">{order.nurse || "Unknown"} · {order.at ? new Date(order.at).toLocaleString() : ""}</div>
+            <div class="audit-meta">{order.nurse || "Unknown"} · {order.at ? formatDateTime(order.at, { year: true }) : ""}</div>
             {#if editingVerbalIndex === i}
               <textarea rows="2" style="width:100%;" bind:value={verbalEditText}></textarea>
               <div style="display:flex;gap:6px;margin-top:4px;">
@@ -1125,7 +1126,7 @@
         {/if}
         {#each careInstructions as instr, i}
           <div class="audit-entry">
-            <div class="audit-meta">{instr.nurse || "Unknown"} · {instr.at ? new Date(instr.at).toLocaleString() : ""}</div>
+            <div class="audit-meta">{instr.nurse || "Unknown"} · {instr.at ? formatDateTime(instr.at, { year: true }) : ""}</div>
             {#if editingCareIndex === i}
               <textarea rows="2" style="width:100%;" bind:value={careEditText}></textarea>
               <div style="display:flex;gap:6px;margin-top:4px;">
@@ -1157,7 +1158,7 @@
         {#if !auditLog.length}<p style="color:#777;font-size:13px;margin:0;">No changes logged yet.</p>{/if}
         {#each [...auditLog].reverse() as entry}
           <div class="audit-entry">
-            <div class="audit-meta">{entry.nurse || "Unknown"} · {entry.at ? new Date(entry.at).toLocaleString() : ""}</div>
+            <div class="audit-meta">{entry.nurse || "Unknown"} · {entry.at ? formatDateTime(entry.at, { year: true }) : ""}</div>
             <div class="audit-text">{entry.text}</div>
           </div>
         {/each}

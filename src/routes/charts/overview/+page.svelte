@@ -11,6 +11,7 @@
   import { getDocSafe, getDocsSafe } from "$lib/helpers/firestoreOffline.js";
   import { buildExportRecord, downloadRecordAsPdf, downloadRecordAsJson } from "$lib/helpers/export.js";
   import { STATUS_LABELS } from "$lib/helpers/drugChartHelpers.js";
+  import { formatDateTime } from "$lib/helpers/time-format.svelte.js";
   import Topbar from "$lib/components/Topbar.svelte";
   import PatientBanner from "$lib/components/PatientBanner.svelte";
 
@@ -18,7 +19,7 @@
 
   function formatTimestamp(ts) {
     if (!ts) return "";
-    try { return ts.toDate().toLocaleString(); } catch (e) { return ""; }
+    try { return formatDateTime(ts.toDate(), { year: true }); } catch (e) { return ""; }
   }
 
   const patientId = $derived(page.url.searchParams.get("patient"));

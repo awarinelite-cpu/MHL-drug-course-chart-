@@ -18,6 +18,7 @@
     SOUND_OPTIONS, APPEARANCE_OPTIONS, REPEAT_OPTIONS, ALL_FREQUENCIES, GLUCOSE_INTERVAL_OPTIONS,
     OVERDUE_REPEAT_OPTIONS, loadAlarmSettings, saveAlarmSettings as persistAlarmSettings
   } from "$lib/helpers/alarm-settings.js";
+  import { timeFormatState } from "$lib/helpers/time-format.svelte.js";
   import Topbar from "$lib/components/Topbar.svelte";
 
   // Every chart type and archived-admission record a patient can accumulate.
@@ -65,6 +66,23 @@
   let userDeletingId = $state(null);
 
   /** @type {any | null} */
+  let timeFormatSaving = $state(false);
+  let timeFormatMsg = $state(null);
+
+  async function setSystemTimeFormat(next) {
+    if (next === timeFormatState.format || timeFormatSaving) return;
+    timeFormatSaving = true;
+    timeFormatMsg = null;
+    try {
+      await timeFormatState.setFormat(next);
+      timeFormatMsg = { type: "info", text: "System time format saved." };
+    } catch (e) {
+      timeFormatMsg = { type: "error", text: e.message || "Failed to save time format." };
+    } finally {
+      timeFormatSaving = false;
+    }
+  }
+
   let alarm = $state(null); // null while loading
   let freqChecked = $state({});
   let alarmSaving = $state(false);
@@ -371,6 +389,31 @@
             {/each}
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <h3 style="margin-top:0;">System Time Format</h3>
+      <p style="font-size:12px;color:#666;margin-top:-6px;">
+        Controls how every clock and timestamp in the system is displayed — drug due-times, vitals, audit logs,
+        nurses reports, exports, everywhere. Applies to every user's device instantly, no reload needed.
+      </p>
+      <div class="field">
+        <div style="display:flex;gap:8px;" role="group" aria-label="System time format">
+          <button type="button" class={"btn " + (timeFormatState.format === "24" ? "btn-primary" : "")}
+            aria-pressed={timeFormatState.format === "24"} disabled={timeFormatSaving}
+            onclick={() => setSystemTimeFormat("24")}>
+            24-Hour (e.g. 14:30)
+          </button>
+          <button type="button" class={"btn " + (timeFormatState.format === "12" ? "btn-primary" : "")}
+            aria-pressed={timeFormatState.format === "12"} disabled={timeFormatSaving}
+            onclick={() => setSystemTimeFormat("12")}>
+            12-Hour, AM/PM (e.g. 2:30 PM)
+          </button>
+        </div>
+        {#if timeFormatMsg}
+          <div class={timeFormatMsg.type === "error" ? "error-msg" : "info-msg"}>{timeFormatMsg.text}</div>
+        {/if}
       </div>
     </div>
 

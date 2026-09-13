@@ -1,6 +1,7 @@
 <script>
   // Ported from src/components/OfflineCacheStatus.jsx (React).
   import { onMount } from "svelte";
+  import { formatDateTime } from "$lib/helpers/time-format.svelte.js";
 
   const STORAGE_KEY = "narhy-cache-status";
 
@@ -95,7 +96,7 @@
   );
 
   const dot = $derived(phase === "caching" ? "gnav-cache-dot-busy" : phase === "ready" ? "gnav-cache-dot-ok" : "gnav-cache-dot-warn");
-  const title = $derived(readyAt ? label + " · last cached " + new Date(readyAt).toLocaleString() : label);
+  const title = $derived(readyAt ? label + " · last cached " + formatDateTime(new Date(readyAt), { year: true }) : label);
 </script>
 
 {#if phase !== "unsupported" && phase !== "checking"}

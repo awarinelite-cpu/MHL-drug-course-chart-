@@ -10,6 +10,7 @@
     WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS,
     PATIENT_STATUS_OPTIONS, DEMOGRAPHIC_FIELDS, occDelta, movementColorClass
   } from "$lib/helpers/nursesReportCommon.js";
+  import { formatDateTime } from "$lib/helpers/time-format.svelte.js";
   import Topbar from "$lib/components/Topbar.svelte";
 
   const movementFields = SHIFT_STAT_FIELDS;
@@ -22,8 +23,7 @@
 
   function fmtTimestamp(ts) {
     if (!ts || !ts.toDate) return "";
-    const d = ts.toDate();
-    return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return formatDateTime(ts.toDate());
   }
 
   function isNoteHeadingLine(line) {

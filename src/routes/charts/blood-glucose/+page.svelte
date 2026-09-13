@@ -9,6 +9,7 @@
   import { goto } from "$app/navigation";
   import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
   import { db } from "$lib/firebase.js";
+  import { formatTime } from "$lib/helpers/time-format.svelte.js";
   import Topbar from "$lib/components/Topbar.svelte";
   import PatientBanner from "$lib/components/PatientBanner.svelte";
 
@@ -184,7 +185,7 @@
         rows3: toDocRows(rowsCache["3point"]),
         updatedAt: serverTimestamp()
       }, { merge: true });
-      saveStatus = "Saved " + new Date().toLocaleTimeString();
+      saveStatus = "Saved " + formatTime(new Date());
     } catch (e) {
       saveStatus = "Save failed: " + (e.code || e.message);
     }
