@@ -15,7 +15,7 @@
   import { wardHeadcount } from "$lib/helpers/wardCensus.js";
   import { WARDS } from "$lib/helpers/nursesReportCommon.js";
   import { loadWardPatients, loadIncomingTransfers, searchPatients, findPatientByEmrExact, nameSearchTokens } from "$lib/helpers/patientDirectory.js";
-  import { activeAdmissionTag, ADMISSION_TAG_LABEL, readmitLatestAdmission, READMIT_ELIGIBLE_TAGS } from "$lib/helpers/patientAdmissionStatus.js";
+  import { activeAdmissionTag, ADMISSION_TAG_LABEL, clearAdmissionTag, readmitLatestAdmission, READMIT_ELIGIBLE_TAGS } from "$lib/helpers/patientAdmissionStatus.js";
 
   function normEmr(emr) { return (emr || "").trim().toLowerCase(); }
 
@@ -39,7 +39,11 @@
   // the ward list can see both a patient's arrival and their departure
   // at a glance. Ported from Home.jsx's AdmissionTagBadge.
   // TRANSFER_REJECTED uses the existing .badge-transferred color (amber)
-  // since it's neither a fresh arrival (blue) nor an exit.
+  // since it's neither a fresh arrival (blue) nor an exit. It's also the
+  // only one of these tags a nurse can tap to dismiss directly (see
+  // admissionTagBadge below) — the other two stay tied to their existing
+  // write-up-linked clearing, since a rejected transfer has no equivalent
+  // follow-up action to wait for.
   const ADMISSION_TAG_BADGE_CLASS = { AE_TRANSFER: "badge-active", NEW_PATIENT: "badge-active", TRANSFER_REJECTED: "badge-transferred" };
 
   const EMPTY_FORM = { name: "", emr: "", diagnosis: "", ward: "", pedBedType: "", age: "", hospNo: "", admissionDate: "", allergies: "", insurance: "" };
@@ -500,9 +504,14 @@
   {@const tag = activeAdmissionTag(patient)}
   {#if tag}
     {@const label = tag === "TRANSFER_REJECTED" && patient.transferRejectedByWard ? `TRANSFER REJECTED by ${patient.transferRejectedByWard}` : (ADMISSION_TAG_LABEL[tag] || tag)}
-    {@const blinkClass = tag === "TRANSFER_REJECTED" ? " badge-emergency-blink" : ""}
+    {@const dismissible = tag === "TRANSFER_REJECTED"}
     <br />
-    <span class={"oi-badge " + (ADMISSION_TAG_BADGE_CLASS[tag] || "badge-active") + blinkClass} style="font-size:12px;padding:2px 8px;margin-top:2px;">
+    <span
+      class={"oi-badge " + (ADMISSION_TAG_BADGE_CLASS[tag] || "badge-active") + (dismissible ? " badge-emergency-blink" : "")}
+      style={"font-size:12px;padding:2px 8px;margin-top:2px;" + (dismissible ? "cursor:pointer;" : "")}
+      title={dismissible ? "Tap to dismiss" : undefined}
+      onclick={dismissible ? (e) => { e.stopPropagation(); clearAdmissionTag(patient.id); } : undefined}
+    >
       {label}
     </span>
   {/if}
