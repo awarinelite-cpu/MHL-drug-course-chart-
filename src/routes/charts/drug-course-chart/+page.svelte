@@ -289,7 +289,10 @@
 
   // --- Drugs table ---
   function enterDrugsEditMode() { drugsEditMode = true; editingDrugRows = {}; }
-  function exitDrugsEditMode() { drugsEditMode = false; editingDrugRows = {}; scheduleSave(); }
+  function exitDrugsEditMode() {
+    Object.keys(editingDrugRows).forEach((key) => { if (editingDrugRows[key]) lockDrugRow(Number(key)); });
+    drugsEditMode = false; editingDrugRows = {}; scheduleSave();
+  }
   function unlockDrugRow(i) { drugRowSnapshots[i] = { ...drugs[i] }; editingDrugRows = { ...editingDrugRows, [i]: true }; }
   function lockDrugRow(i) {
     const before = drugRowSnapshots[i] || {};
@@ -340,7 +343,10 @@
 
   // --- Chart table ---
   function enterChartEditMode() { chartEditMode = true; editingChartRows = {}; }
-  function exitChartEditMode() { chartEditMode = false; editingChartRows = {}; scheduleSave(); }
+  function exitChartEditMode() {
+    Object.keys(editingChartRows).forEach((key) => { if (editingChartRows[key]) lockChartRow(Number(key)); });
+    chartEditMode = false; editingChartRows = {}; scheduleSave();
+  }
   function unlockChartRow(i) { chartRowSnapshots[i] = { ...chartRows[i] }; editingChartRows = { ...editingChartRows, [i]: true }; }
   function lockChartRow(i) {
     const row = chartRows[i];
