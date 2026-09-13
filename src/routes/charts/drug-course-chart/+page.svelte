@@ -770,7 +770,7 @@
               {@const due = dueLabelFor(drug, i, chartRows, now)}
               {@const seq = parseDoseSequence(drug.frequency)}
               {@const weeklyN = parseWeeklyFrequency(drug.frequency)}
-              {@const weeklyGiven = weeklyN && weeklyN > 1 ? weeklyDosesGivenThisWeek(chartRows, i, now) : 0}
+              {@const weeklyGiven = weeklyN ? weeklyDosesGivenThisWeek(chartRows, i, now) : 0}
               {@const editing = drugsEditMode && editingDrugRows[i]}
               {@const showPencil = drugsEditMode && !editing}
               {#if editing}
