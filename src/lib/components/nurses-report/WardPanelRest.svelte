@@ -9,6 +9,8 @@
   import {
     PATIENT_FIELDS, PATIENT_STATUS_OPTIONS
   } from "$lib/helpers/nursesReportCommon.js";
+  import { ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
+  import { autogrow } from "$lib/helpers/autogrow.js";
   import ShiftTable from "./ShiftTable.svelte";
   import DemographicsTable from "./DemographicsTable.svelte";
   import MaternityDemographicsTable from "./MaternityDemographicsTable.svelte";
@@ -21,6 +23,22 @@
     includeShiftTable = true, includePreviousOcc = true, includeHeader = true, includeDemographics = true,
     onSave = null, onSubmit = null, useMaternityDemographics = false, locationOptions = null
   } = $props();
+
+  // Quick lookup only, not tied to any write-up — lets the nurse glance at
+  // a patient's roster tag (Discharge/Trans Out/Death/admission tag) right
+  // next to Previous Occ while tallying the Shift Statistics table above,
+  // instead of scrolling all the way down to the Patients section to find
+  // that same tag on a linked write-up.
+  let quickLookupId = $state("");
+  let quickLookupRecord = $derived((h.wardPatientOptions || []).find((o) => o.id === quickLookupId));
+  let quickLookupTag = $derived(
+    !quickLookupRecord ? null :
+    quickLookupRecord.dischargeStatus
+      ? (quickLookupRecord.dischargeStatus === "TRANS OUT" ? "TRANS OUT" : quickLookupRecord.dischargeStatus === "DEATH" ? "Death" : "Discharged")
+      : quickLookupRecord.admissionTag
+        ? (ADMISSION_TAG_LABEL[quickLookupRecord.admissionTag] || quickLookupRecord.admissionTag)
+        : "Active \u2014 no status tag"
+  );
 </script>
 
 {#if includeHeader && h.topStatus.text}
@@ -39,19 +57,28 @@
 
   {#if includePreviousOcc}
     <div class="card-box">
-      <div class="ward-select-row">
-        <h2 style="margin:0;">{showLabel && h.w?.label ? h.w.label : "Previous Occ"}</h2>
-        <span class={"status-pill " + h.pillClass}>{h.pillText}</span>
-        {#if includeHeader && h.w}
-          <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
-            onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(h.w.key) + "&label=" + encodeURIComponent(h.w.label))}>
-            {"\uD83D\uDCC1 Archive"}
-          </button>
+      <div class="patient-field" style="margin-top:0;">
+        {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
+          <label>Check a patient's status:</label>
         {/if}
-      </div>
-      {#if showLabel && h.w?.label}<div style="font-size:13px;color:#6b7280;margin:6px 0 0;">Previous Occ</div>{/if}
-      <div class="patient-field" style="max-width:140px;">
-        <input type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+          {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
+            <div style="flex:1 1 180px;min-width:180px;">
+              <WardPatientPicker value={quickLookupId} options={h.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
+              {#if quickLookupTag}
+                <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
+                  {quickLookupTag}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          {#if includeHeader && h.w}
+            <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
+              onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(h.w.key) + "&label=" + encodeURIComponent(h.w.label))}>
+              {"\uD83D\uDCC1 Archive"}
+            </button>
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
@@ -88,7 +115,8 @@
           {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
             <div class="patient-field">
               <label for={"select-patient-" + p.id}>Select Patient:</label>
-              <WardPatientPicker value={p.sourcePatientId || ""} options={h.wardPatientOptions} onSelect={(id) => h.selectPatientFromWard(p.id, id)} />
+              <WardPatientPicker value={p.sourcePatientId || ""} options={h.wardPatientOptions} onSelect={(id) => h.selectPatientFromWard(p.id, id)}
+                usedIds={new Set(h.wardDoc.patients.filter((other) => other.id !== p.id && other.sourcePatientId).map((other) => other.sourcePatientId))} />
             </div>
           {/if}
           {#if locationOptions}
@@ -115,6 +143,7 @@
                 <label for={f.key + "-" + p.id}>{f.label}:</label>
                 {#if f.type === "textarea"}
                   <textarea id={f.key + "-" + p.id} class={f.big ? "big" : ""} value={p[f.key] || ""}
+                    use:autogrow={{ min: f.big ? 110 : 60, max: 480 }}
                     oninput={(e) => f.key === "diagnosis" ? h.updateDiagnosisField(p.id, e.target.value) : h.updatePatientField(p.id, f.key, e.target.value)}></textarea>
                 {:else}
                   <input id={f.key + "-" + p.id} type="text" value={p[f.key] || ""} oninput={(e) => h.updatePatientField(p.id, f.key, e.target.value)}
@@ -147,7 +176,8 @@
     {#if h.editable && h.nightUpdateOpen}
       <div class="patient-field" style="margin-top:10px;">
         <label class="patient-note-label" for="nightUpdateInput" style="margin-top:0;">Night update:</label>
-        <textarea id="nightUpdateInput" placeholder="Type the night update here\u2026" style="min-height:140px;"
+        <textarea id="nightUpdateInput" placeholder="Type the night update here\u2026"
+          use:autogrow={{ min: 140, max: 520 }}
           value={h.wardDoc.nightUpdate} oninput={(e) => h.updateWardDoc({ nightUpdate: e.target.value })}></textarea>
       </div>
     {/if}

@@ -14,7 +14,7 @@
   import Topbar from "$lib/components/Topbar.svelte";
   import PatientBanner from "$lib/components/PatientBanner.svelte";
 
-  const BADGE_CLASS = { referred: "badge-referred", transferred: "badge-transferred", discharged: "badge-discharged" };
+  const BADGE_CLASS = { referred: "badge-referred", transferred: "badge-transferred", discharged: "badge-discharged", died: "badge-died" };
 
   function formatTimestamp(ts) {
     if (!ts) return "";
