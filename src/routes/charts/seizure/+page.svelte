@@ -3,7 +3,8 @@
   import EntryChart from "$lib/components/EntryChart.svelte";
 
   const columns = [
-    { key: "time", label: "Time", type: "datetime-local" },
+    { key: "date", label: "Date", type: "date" },
+    { key: "time", label: "Time", type: "time" },
     { key: "duration", label: "Duration", type: "text" },
     { key: "type", label: "Type", type: "text" },
     { key: "description", label: "Description", type: "text" }

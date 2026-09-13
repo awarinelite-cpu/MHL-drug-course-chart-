@@ -6,18 +6,12 @@
 // nursing shift convention) rather than midnight to midnight.
 const PERIOD_START_HOUR = 6;
 
-// row.time is stored as a naive local "YYYY-MM-DDTHH:MM" string (see the
-// time-input default in EntryChart), so `new Date(row.time)` reconstructs
-// the same local date/time it was entered as — safe to use directly.
-function dateDisplayOf(row) {
-  if (!row.time) return '';
-  const d = new Date(row.time);
-  return isNaN(d) ? row.time.slice(0, 10) : d.toLocaleDateString();
-}
-function timeDisplayOf(row) {
-  if (!row.time) return '';
-  const d = new Date(row.time);
-  return isNaN(d) ? row.time.slice(11, 16) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// row.date is "YYYY-MM-DD" and row.time is "HH:MM" (separate entry columns —
+// see EntryChart's normalizeRow, which also backfills both from any older
+// entry that still only has a single combined datetime string). Combining
+// them reconstructs the same local date/time it was entered as.
+function rowDateTime(row) {
+  return new Date(row.date + 'T' + (row.time || '00:00'));
 }
 
 // The 6:00 AM start of the 24-hour period that a given Date falls within
@@ -29,8 +23,8 @@ function periodStart(d) {
   return p;
 }
 function periodKeyOf(row) {
-  if (!row.time) return '';
-  const d = new Date(row.time);
+  if (!row.date) return '';
+  const d = rowDateTime(row);
   return isNaN(d) ? '' : periodStart(d).toISOString();
 }
 function periodRangeLabel(start) {
@@ -79,14 +73,14 @@ export function deriveIOBalance(ascRows, closeContext) {
     if (key !== currentKey) {
       flushPeriod(false);
       currentKey = key;
-      currentStart = periodStart(new Date(row.time));
+      currentStart = periodStart(rowDateTime(row));
       running = 0; periodIntake = 0; periodOutput = 0;
     }
     const intake = parseFloat(row.intakeAmount) || 0;
     const output = parseFloat(row.outputAmount) || 0;
     running += intake - output;
     periodIntake += intake; periodOutput += output;
-    out.push({ ...row, balance: running, dateDisplay: dateDisplayOf(row), timeDisplay: timeDisplayOf(row) });
+    out.push({ ...row, balance: running });
   });
   flushPeriod(true); // the most recent group — closed by clock, by discharge, or (if neither) left open
   return out;
@@ -99,7 +93,7 @@ export function computeTodayTotals(rawRows, closeContext) {
   const closedAt = closeContext && closeContext.closedAt instanceof Date && !isNaN(closeContext.closedAt) ? closeContext.closedAt : null;
   let targetKey;
   if (closedAt) {
-    const closedRows = rawRows.filter(r => r.time);
+    const closedRows = rawRows.filter(r => r.date && r.time);
     targetKey = closedRows.length ? periodKeyOf(closedRows[closedRows.length - 1]) : periodStart(closedAt).toISOString();
   } else {
     targetKey = periodStart(new Date()).toISOString();

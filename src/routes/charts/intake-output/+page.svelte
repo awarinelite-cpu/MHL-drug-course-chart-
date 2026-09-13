@@ -5,12 +5,8 @@
   import { deriveIOBalance, computeTodayTotals } from "$lib/helpers/intakeOutputHelpers.js";
 
   const columns = [
-    // Single datetime input drives entry (and sorting/day-boundary logic), but
-    // the table shows it as separate Date and Time columns — see
-    // dateDisplayOf/timeDisplayOf and deriveIOBalance.
-    { key: "time", label: "Time", type: "datetime-local", formOnly: true },
-    { key: "dateDisplay", label: "Date", computed: true },
-    { key: "timeDisplay", label: "Time", computed: true },
+    { key: "date", label: "Date", type: "date" },
+    { key: "time", label: "Time", type: "time" },
     {
       // Dropdown (not free text) for route of intake, with an "OTHERS" option
       // that reveals a small textarea to specify the custom route. Starts on
