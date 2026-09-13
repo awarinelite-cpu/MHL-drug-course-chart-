@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, addDoc, query, where, updateDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, limit, updateDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "$lib/firebase.js";
 import { STATUS_LABELS, defaultRow } from "./drugChartHelpers.js";
 
@@ -276,4 +276,142 @@ export async function applyPatientStatus({ patientId, reason, transferWard, from
   clearAllocationsForPatient(patientId).catch((e) => console.warn('Could not clear allocations after discharge/refer:', e));
 
   return { ok: true, label, wardChosen };
+}
+
+// Exit reasons a nurse can walk back via Readmit — the patient's stay
+// continues, so the archived chart data is restorable. 'died' is
+// permanent, and 'transferred' never archives anything in the first
+// place (see applyPatientStatus above), so neither needs this.
+export const READMIT_ELIGIBLE_REASONS = ['discharged', 'referred', 'dama', 'absconded'];
+
+// The same set, expressed as the roster tags shown on the ward list —
+// so the Home.jsx Readmit button and the Admission Overview one both
+// derive from this single list instead of keeping two in sync by hand.
+export const READMIT_ELIGIBLE_TAGS = READMIT_ELIGIBLE_REASONS.map(r => ROSTER_TAG_FOR_REASON[r]);
+
+// Same check Admission.jsx's own Readmit button uses: don't restore an
+// archived record on top of a newer admission that's already in progress
+// on the live charts.
+async function hasActiveAdmissionData(patientId) {
+  const [drugSnap, bgSnap, vitalsSnap, ioSnap, seizureSnap] = await Promise.all([
+    getDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main')),
+    getDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main')),
+    getDocs(collection(db, 'patients', patientId, 'vitals')),
+    getDocs(collection(db, 'patients', patientId, 'intakeOutput')),
+    getDocs(collection(db, 'patients', patientId, 'seizure'))
+  ]);
+  const drugData = drugSnap.exists() ? drugSnap.data() : null;
+  const bgData = bgSnap.exists() ? bgSnap.data() : null;
+  const hasDrugData = !!(drugData && ((drugData.f_diagnosis || '') || (drugData.drugs || []).some(d => d && d.name) || (drugData.rows || []).some(r => r && (r.date || r.sno))));
+  const hasCells = arr => (arr || []).some(r => (r.cells || r || []).some(cell => cell));
+  const hasBgData = !!(bgData && (hasCells(bgData.rows6) || hasCells(bgData.rows3) || hasCells(bgData.rows)));
+  return hasDrugData || hasBgData || !vitalsSnap.empty || !ioSnap.empty || !seizureSnap.empty;
+}
+
+// Cancels a patient's most recent exit (discharge/refer/DAMA/absconded)
+// and restores the drug chart, vitals, glycemic chart, intake & output,
+// and seizure chart from that archived admission back to active — care
+// continues from exactly where it left off. Shared by the ward-list
+// Readmit button (Home.jsx) and the Admission Overview page's own
+// Readmit button, so both go through one code path. Looks up the most
+// recently archived admission itself rather than requiring the caller
+// to already know its id — the ward list only has the dischargeStatus
+// tag, not an admission id.
+//
+// Two genuinely different situations both land on this Readmit button,
+// and they need different handling:
+//   1. "Awaiting ward report" — applyPatientStatus already tagged the
+//      patient dischargeStatus and archived+blanked their charts, but
+//      the ward hasn't submitted a closing write-up yet, so the patient
+//      is still on the ward roster (see closeOutDischargedPatient) and
+//      a nurse may have gone ahead and started a brand-new admission
+//      for them in the meantime (fresh drug chart, NEW PATIENT tag,
+//      etc.) before that old exit was ever closed out. Here "Readmit"
+//      just means "that exit shouldn't have happened" — cancel the
+//      stale dischargeStatus tag and leave the new admission's live
+//      data exactly as it is. There's nothing to restore: the thing
+//      being undone is the tag, not the charts.
+//   2. Already fully closed out (dischargeStatus cleared, patient off
+//      the ward roster) — this is the Admission Overview case, opening
+//      an actually-archived record from `admissions`. Here Readmit
+//      really does mean restoring that old archived chart data back to
+//      live, so the active-admission guard below still applies: if the
+//      patient has since started an unrelated new admission somewhere,
+//      refuse rather than overwrite it.
+export async function readmitLatestAdmission({ patientId, nurseName }) {
+  let dischargeStatus = '';
+  try {
+    const patientSnap = await getDoc(doc(db, 'patients', patientId));
+    if (patientSnap.exists()) dischargeStatus = patientSnap.data().dischargeStatus || '';
+  } catch (e) {
+    return { ok: false, message: 'Could not look up the patient record: ' + (e.code || e.message) };
+  }
+
+  if (dischargeStatus && await hasActiveAdmissionData(patientId)) {
+    // Situation 1 above: the old exit was never closed out and a new
+    // admission is already live. Just cancel the stale exit tag.
+    try {
+      await updateDoc(doc(db, 'patients', patientId), { dischargeStatus: '', dischargeStatusAt: null, updatedAt: serverTimestamp() });
+      return { ok: true, cancelledPendingExit: true };
+    } catch (e) {
+      return { ok: false, message: 'Could not cancel the exit: ' + (e.code || e.message) };
+    }
+  }
+
+  let admSnap;
+  try {
+    const q = query(collection(db, 'patients', patientId, 'admissions'), orderBy('archivedAt', 'desc'), limit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) return { ok: false, message: 'No archived admission found to readmit.' };
+    admSnap = snap.docs[0];
+  } catch (e) {
+    return { ok: false, message: 'Could not look up the archived admission: ' + (e.code || e.message) };
+  }
+
+  const admData = admSnap.data();
+  if (!READMIT_ELIGIBLE_REASONS.includes(admData.archiveReason)) {
+    return { ok: false, message: 'This exit reason (' + (admData.archiveReasonLabel || admData.archiveReason || 'unknown') + ') can\u2019t be readmitted from here.' };
+  }
+
+  if (await hasActiveAdmissionData(patientId)) {
+    return { ok: false, message: 'This patient already has an active admission in progress \u2014 readmitting would overwrite it. Close out or resolve the current admission first, or contact an admin.' };
+  }
+
+  try {
+    const dc = admData.drugCourseChart || {};
+    const restoredAuditLog = Array.isArray(dc.auditLog) ? dc.auditLog.slice() : [];
+    restoredAuditLog.push({
+      text: 'Patient readmitted \u2014 exit on ' + (admData.archivedAtDisplay || 'an earlier date') + ' cancelled; care continues.',
+      nurse: nurseName || 'Unknown',
+      at: new Date().toISOString()
+    });
+    const restoredDrugChart = { ...dc, f_discharge: '', auditLog: restoredAuditLog, updatedAt: serverTimestamp() };
+    const bg = admData.bloodGlucose || { chartType: '6point', rows6: [], rows3: [] };
+    const ioSummary = admData.intakeOutputSummary || { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10) };
+
+    await Promise.all([
+      setDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main'), restoredDrugChart),
+      setDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'), {
+        chartType: bg.chartType || '6point',
+        rows6: bg.rows6 || (bg.chartType !== '3point' ? (bg.rows || []) : []),
+        rows3: bg.rows3 || (bg.chartType === '3point' ? (bg.rows || []) : []),
+        updatedAt: serverTimestamp()
+      }),
+      setDoc(doc(db, 'patients', patientId, 'intakeOutputSummary', 'current'), { ...ioSummary, updatedAt: serverTimestamp() }),
+      ...(admData.vitals || []).map(entry => addDoc(collection(db, 'patients', patientId, 'vitals'), entry)),
+      ...(admData.intakeOutput || []).map(entry => addDoc(collection(db, 'patients', patientId, 'intakeOutput'), entry)),
+      ...(admData.seizure || []).map(entry => addDoc(collection(db, 'patients', patientId, 'seizure'), entry)),
+      // Discharge is cancelled, so the roster's exit badge and the
+      // readonly discharge-date lock both need to clear too — otherwise
+      // a readmitted patient would still show DISCHARGE/DAMA/etc. on the
+      // ward list even though they're active again.
+      updateDoc(doc(db, 'patients', patientId), { dischargeStatus: '', dischargeStatusAt: null, updatedAt: serverTimestamp() })
+    ]);
+
+    await deleteDoc(doc(db, 'patients', patientId, 'admissions', admSnap.id));
+
+    return { ok: true, admissionId: admSnap.id };
+  } catch (e) {
+    return { ok: false, message: 'Readmit failed: ' + (e.code || e.message || 'unknown error') };
+  }
 }

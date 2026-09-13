@@ -11,6 +11,7 @@
   import { authState } from "$lib/stores/auth.svelte.js";
   import { getDocSafe } from "$lib/helpers/firestoreOffline.js";
   import { applyPatientStatus } from "$lib/helpers/patientAdmissionStatus.js";
+  import { nameSearchTokens } from "$lib/helpers/patientDirectory.js";
   import { STATUS_LABELS, WARD_OPTIONS } from "$lib/helpers/drugChartHelpers.js";
   import Topbar from "$lib/components/Topbar.svelte";
   import PatientBanner from "$lib/components/PatientBanner.svelte";
@@ -161,6 +162,12 @@
     if (!name || !emr) { editMsg = "Name and EMR number are required."; return; }
     const updates = {
       name, emr,
+      // Search (patientDirectory.js's searchPatients) reads these
+      // lowercased/tokenized copies, not name/emr directly — without
+      // refreshing them here, renaming or correcting a patient's EMR
+      // silently dropped them out of search results until an admin ran
+      // the reindex.
+      nameLower: name.toLowerCase(), emrLower: emr.toLowerCase(), nameTokens: nameSearchTokens(name),
       diagnosis: editForm.diagnosis.trim(), wardMhl: editForm.ward.trim(),
       pedBedTypeMhl: editForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (editForm.pedBedType || "") : "",
       age: editForm.age.trim(),

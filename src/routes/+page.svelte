@@ -14,18 +14,22 @@
   import { reportWardKeysForPatientWard, patientWardAndBedTypeForReportKey } from "$lib/helpers/wardNameMatch.js";
   import { wardHeadcount } from "$lib/helpers/wardCensus.js";
   import { WARDS } from "$lib/helpers/nursesReportCommon.js";
-  import { loadWardPatients, loadIncomingTransfers, searchPatients, findPatientByEmrExact } from "$lib/helpers/patientDirectory.js";
-  import { activeAdmissionTag, ADMISSION_TAG_LABEL } from "$lib/helpers/patientAdmissionStatus.js";
+  import { loadWardPatients, loadIncomingTransfers, searchPatients, findPatientByEmrExact, nameSearchTokens } from "$lib/helpers/patientDirectory.js";
+  import { activeAdmissionTag, ADMISSION_TAG_LABEL, readmitLatestAdmission, READMIT_ELIGIBLE_TAGS } from "$lib/helpers/patientAdmissionStatus.js";
 
   function normEmr(emr) { return (emr || "").trim().toLowerCase(); }
 
-  // Ward-list status badge for patients tagged DISCHARGE/TRANS OUT/DEATH by
-  // applyPatientStatus (see patientAdmissionStatus.js) but still on the ward
-  // roster, awaiting the ward nurse's closing report before
-  // closeOutDischargedPatient clears their ward field and drops them off
-  // this list. Reuses the same badge-* classes Overview/Admission already
-  // use for archived-admission status pills. Ported from Home.jsx's
-  // PendingDischargeBadge.
+  // Ward-list status badge for patients tagged DISCHARGE/TRANS OUT/DEATH/
+  // DAMA/ABSC by applyPatientStatus (see patientAdmissionStatus.js) but
+  // still on the ward roster, awaiting the ward nurse's closing report
+  // before closeOutDischargedPatient clears their ward field and drops
+  // them off this list. Reuses the same badge-* classes Overview/Admission
+  // already use for archived-admission status pills. For tags in
+  // READMIT_ELIGIBLE_TAGS (everything except DEATH — a transfer to
+  // another ward never sets dischargeStatus in the first place, see
+  // applyPatientStatus), also offers an inline Readmit action so a nurse
+  // doesn't have to open Overview and hunt for the archived admission.
+  // Ported from Home.jsx's PendingDischargeBadge.
   const DISCHARGE_BADGE_CLASS = { DISCHARGE: "badge-discharged", "TRANS OUT": "badge-referred", DEATH: "badge-died", DAMA: "badge-dama", ABSC: "badge-absconded" };
 
   // Ward-list badge for a patient's recent-admission tag (NEW PATIENT /
@@ -162,6 +166,42 @@
     incomingTransfers = incoming;
   }
 
+  // Readmit action inline on the ward list — cancels a DISCHARGE/TRANS
+  // OUT/DAMA/ABSC exit and restores the most recent archived admission
+  // back to active (see readmitLatestAdmission in patientAdmissionStatus.js),
+  // without a nurse having to open Overview and find the record by hand.
+  // Keyed by patient id so busy/status only affects the row that was tapped.
+  // Ported from Home.jsx's handleReadmit.
+  let readmitBusyId = $state(null);
+  let readmitMsgs = $state({});
+
+  async function handleReadmit(p) {
+    const patientName = (p.name || "").trim() || "this patient";
+    if (!confirm("Readmit " + patientName + "?\n\nThis cancels the exit and restores the drug chart, vitals, glycemic chart, intake & output, and seizure chart from this admission back to active. Care continues from exactly where it left off.")) return;
+    if (!navigator.onLine) {
+      readmitMsgs = { ...readmitMsgs, [p.id]: { color: "#b91c1c", text: "This needs an internet connection to safely restore the archived record. Please try again once online." } };
+      return;
+    }
+    readmitBusyId = p.id;
+    readmitMsgs = { ...readmitMsgs, [p.id]: { color: "#555", text: "Working…" } };
+    const result = await readmitLatestAdmission({ patientId: p.id, nurseName: authState.profile?.name });
+    readmitBusyId = null;
+    if (!result.ok) {
+      readmitMsgs = { ...readmitMsgs, [p.id]: { color: "#b91c1c", text: result.message } };
+      return;
+    }
+    // cancelledPendingExit: the old exit was never closed out and a new
+    // admission had already started for this patient — nothing was
+    // restored, the stale exit tag was just cleared (see
+    // readmitLatestAdmission in patientAdmissionStatus.js).
+    readmitMsgs = { ...readmitMsgs, [p.id]: { color: "#16a34a", text: result.cancelledPendingExit ? "Exit cancelled — patient stays on the ward." : "Readmitted." } };
+    // Refresh the visible list(s) so the DISCHARGE/etc. badge drops off
+    // now that the patient is active again.
+    loadWardData(true);
+    const term = searchQuery.trim();
+    if (term) searchPatients(term).then((r) => { searchResults = r; });
+  }
+
   // Debounced cross-ward search — fires a targeted, indexed query (see
   // searchPatients in patientDirectory.js) instead of filtering an
   // already-downloaded full patient list. Clearing the box drops back to
@@ -215,7 +255,7 @@
     const diagnosis = newForm.diagnosis.trim();
     const data = {
       name, emr,
-      nameLower: name.toLowerCase(), emrLower: emr.toLowerCase(),
+      nameLower: name.toLowerCase(), emrLower: emr.toLowerCase(), nameTokens: nameSearchTokens(name),
       diagnosis, wardMhl: newForm.ward.trim(),
       pedBedTypeMhl: newForm.ward.trim() === "PEDIATRIC/NICU WARD" ? (newForm.pedBedType || "") : "",
       age: newForm.age.trim(),
@@ -340,7 +380,7 @@
       } else {
         const data = {
           name: r.data.name, emr: r.data.emr,
-          nameLower: (r.data.name || "").trim().toLowerCase(), emrLower: (r.data.emr || "").trim().toLowerCase(),
+          nameLower: (r.data.name || "").trim().toLowerCase(), emrLower: (r.data.emr || "").trim().toLowerCase(), nameTokens: nameSearchTokens(r.data.name),
           diagnosis: r.data.diagnosis,
           wardMhl: r.data.ward, pedBedTypeMhl: r.data.ward === "PEDIATRIC/NICU WARD" ? r.data.pedBedType : "",
           age: r.data.age, hospNo: r.data.hospNo, admissionDate: r.data.admissionDate,
@@ -430,12 +470,27 @@
   function focusSearch() { searchInputEl && searchInputEl.focus(); }
 </script>
 
-{#snippet pendingDischargeBadge(status)}
+{#snippet pendingDischargeBadge(patient)}
+  {@const status = patient.dischargeStatus}
   {#if status}
     <br />
     <span class={"oi-badge " + (DISCHARGE_BADGE_CLASS[status] || "badge-discharged")} style="font-size:12px;padding:2px 8px;margin-top:2px;">
       {status} — awaiting ward report
     </span>
+    {#if READMIT_ELIGIBLE_TAGS.includes(status)}
+      <button
+        class="oi-badge"
+        style="font-size:12px;padding:2px 8px;margin-top:2px;margin-left:4px;border:none;cursor:pointer;background:#2563eb;color:#fff;"
+        disabled={readmitBusyId === patient.id}
+        onclick={(e) => { e.stopPropagation(); handleReadmit(patient); }}
+      >
+        {readmitBusyId === patient.id ? "Working…" : "↺ Readmit"}
+      </button>
+    {/if}
+    {#if readmitMsgs[patient.id]}
+      <br />
+      <span style={"font-size:11px;color:" + readmitMsgs[patient.id].color}>{readmitMsgs[patient.id].text}</span>
+    {/if}
   {/if}
 {/snippet}
 
@@ -620,7 +675,7 @@
             {#if g.patients.length === 0}<div style="font-size:12px;color:#888;">No patients yet.</div>{/if}
             {#each g.patients as p (p.id)}
               <div class="search-result-item" onclick={() => openPatient(p)}>
-                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
+                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p)}</span>
                 <span>{p.diagnosis || ""}</span>
               </div>
             {/each}
@@ -633,7 +688,7 @@
             </div>
             {#each pedGroups.unassigned as p (p.id)}
               <div class="search-result-item" onclick={() => openPatient(p)}>
-                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
+                <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p)}</span>
                 <span>{p.diagnosis || ""}</span>
               </div>
             {/each}
@@ -643,7 +698,7 @@
       {#if patientsLoaded && visiblePatients.length > 0 && !pedGroups}
         {#each visiblePatients as p (p.id)}
           <div class="search-result-item" onclick={() => openPatient(p)}>
-            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p.dischargeStatus)}</span>
+            <span><b>{p.name || "Unnamed"}</b>. EMR: {p.emr || "N/A"}{q && p.wardMhl ? ". Ward: " + p.wardMhl : ""}{@render admissionTagBadge(p)}{@render pendingDischargeBadge(p)}</span>
             <span>{p.diagnosis || ""}</span>
           </div>
         {/each}

@@ -5,12 +5,13 @@
   import { onMount } from "svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { doc, setDoc, deleteDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+  import { doc } from "firebase/firestore";
   import { db } from "$lib/firebase.js";
   import { authState } from "$lib/stores/auth.svelte.js";
-  import { getDocSafe, getDocsSafe } from "$lib/helpers/firestoreOffline.js";
+  import { getDocSafe } from "$lib/helpers/firestoreOffline.js";
   import { buildExportRecord, downloadRecordAsPdf, downloadRecordAsJson, sharePdf } from "$lib/helpers/export.js";
   import { STATUS_LABELS } from "$lib/helpers/drugChartHelpers.js";
+  import { readmitLatestAdmission, READMIT_ELIGIBLE_REASONS } from "$lib/helpers/patientAdmissionStatus.js";
   import Topbar from "$lib/components/Topbar.svelte";
   import PatientBanner from "$lib/components/PatientBanner.svelte";
 
@@ -104,28 +105,9 @@
     if (notFound && patientId) goto("/charts/overview?patient=" + patientId);
   });
 
-  // Mirrors Overview's own hasActiveData check — used to make sure
-  // readmitting doesn't silently overwrite a newer admission that's already
-  // in progress on the live charts.
-  async function hasActiveData() {
-    const [drugSnap, bgSnap, vitalsSnap, ioSnap, seizureSnap] = await Promise.all([
-      getDocSafe(doc(db, "patients", patientId, "drugCourseChart", "main")),
-      getDocSafe(doc(db, "patients", patientId, "bloodGlucose", "main")),
-      getDocsSafe(collection(db, "patients", patientId, "vitals")),
-      getDocsSafe(collection(db, "patients", patientId, "intakeOutput")),
-      getDocsSafe(collection(db, "patients", patientId, "seizure"))
-    ]);
-    const drugData = drugSnap.exists() ? drugSnap.data() : null;
-    const bgData = bgSnap.exists() ? bgSnap.data() : null;
-    const hasDrugData = !!(drugData && ((drugData.f_diagnosis || "") || (drugData.drugs || []).some(d => d && d.name) || (drugData.rows || []).some(r => r && (r.date || r.sno))));
-    const hasCells = arr => (arr || []).some(r => (r.cells || r || []).some(cell => cell));
-    const hasBgData = !!(bgData && (hasCells(bgData.rows6) || hasCells(bgData.rows3) || hasCells(bgData.rows)));
-    return hasDrugData || hasBgData || !vitalsSnap.empty || !ioSnap.empty || !seizureSnap.empty;
-  }
-
   async function readmitPatient() {
     const patientName = (patient?.name || "").trim() || "this patient";
-    if (!confirm("Readmit " + patientName + "?\n\nThis cancels the discharge and restores the drug chart, vitals, glycemic chart, intake & output, and seizure chart from this admission back to active. Care continues from exactly where it left off.")) return;
+    if (!confirm("Readmit " + patientName + "?\n\nThis cancels the exit and restores the drug chart, vitals, glycemic chart, intake & output, and seizure chart from this admission back to active. Care continues from exactly where it left off.")) return;
 
     // Same reasoning as applyStatusAction's guard on the drug chart page:
     // this restores multiple collections from the archived record and then
@@ -138,61 +120,17 @@
     }
 
     readmitBusy = true;
-    readmitStatus = { color: "#555", text: "Checking for a newer admission already in progress…" };
+    readmitStatus = { color: "#555", text: "Restoring charts…" };
 
-    try {
-      if (await hasActiveData()) {
-        readmitStatus = { color: "#b91c1c", text: "This patient already has an active admission in progress — readmitting this record would overwrite it. Close out or resolve the current admission first, or contact an admin." };
-        readmitBusy = false;
-        return;
-      }
-
-      readmitStatus = { color: "#555", text: "Restoring charts…" };
-      const admData = archivedAdmissionData || {};
-      const dc = admData.drugCourseChart || {};
-      const restoredAuditLog = Array.isArray(dc.auditLog) ? dc.auditLog.slice() : [];
-      restoredAuditLog.push({
-        text: "Patient readmitted — discharge on " + (admData.archivedAtDisplay || "an earlier date") + " cancelled; care continues.",
-        nurse: authState.profile?.name || "Unknown",
-        at: new Date().toISOString()
-      });
-      const restoredDrugChart = {
-        ...dc,
-        f_discharge: "", // no longer discharged
-        auditLog: restoredAuditLog,
-        updatedAt: serverTimestamp()
-      };
-      const bg = admData.bloodGlucose || { chartType: "6point", rows6: [], rows3: [] };
-      const ioSummary = admData.intakeOutputSummary || { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10) };
-
-      await Promise.all([
-        setDoc(doc(db, "patients", patientId, "drugCourseChart", "main"), restoredDrugChart),
-        setDoc(doc(db, "patients", patientId, "bloodGlucose", "main"), {
-          chartType: bg.chartType || "6point",
-          // A record archived before per-type storage existed may still only
-          // have the old single 'rows' field — carry it into whichever type
-          // it belonged to instead of dropping it.
-          rows6: bg.rows6 || (bg.chartType !== "3point" ? (bg.rows || []) : []),
-          rows3: bg.rows3 || (bg.chartType === "3point" ? (bg.rows || []) : []),
-          updatedAt: serverTimestamp()
-        }),
-        setDoc(doc(db, "patients", patientId, "intakeOutputSummary", "current"), { ...ioSummary, updatedAt: serverTimestamp() }),
-        ...(admData.vitals || []).map(entry => addDoc(collection(db, "patients", patientId, "vitals"), entry)),
-        ...(admData.intakeOutput || []).map(entry => addDoc(collection(db, "patients", patientId, "intakeOutput"), entry)),
-        ...(admData.seizure || []).map(entry => addDoc(collection(db, "patients", patientId, "seizure"), entry))
-      ]);
-
-      // The discharge is cancelled, not just superseded — remove the
-      // archived record so it doesn't keep showing as a closed admission
-      // alongside the now-active one it was restored into.
-      await deleteDoc(doc(db, "patients", patientId, "admissions", admissionId));
-
-      readmitStatus = { color: "#16a34a", text: "Readmitted — redirecting to the active chart…" };
-      setTimeout(() => goto("/charts/drug-course-chart?patient=" + patientId + "&from=admission"), 900);
-    } catch (e) {
-      readmitStatus = { color: "#b91c1c", text: "Readmit failed: " + (e.code || e.message || "unknown error") };
+    const result = await readmitLatestAdmission({ patientId, nurseName: authState.profile?.name });
+    if (!result.ok) {
+      readmitStatus = { color: "#b91c1c", text: result.message };
       readmitBusy = false;
+      return;
     }
+
+    readmitStatus = { color: "#16a34a", text: result.cancelledPendingExit ? "Exit cancelled — redirecting to the active chart…" : "Readmitted — redirecting to the active chart…" };
+    setTimeout(() => goto("/charts/drug-course-chart?patient=" + patientId + "&from=admission"), 900);
   }
 
   function chartHref(key) {
@@ -259,7 +197,7 @@
       {info?.diagnosis || "—"}
       {#if info}<span class={"badge " + info.badgeClass}>{info.badgeText}</span>{/if}
     </div>
-    {#if isArchived && archiveReason === "discharged"}
+    {#if isArchived && READMIT_ELIGIBLE_REASONS.includes(archiveReason)}
       <button class="badge no-print" style="border:none;cursor:pointer;background:#2563eb;margin-top:6px;padding:4px 10px;"
         disabled={readmitBusy} onclick={readmitPatient}>
         {readmitBusy ? "Working…" : "↺ Readmit"}
