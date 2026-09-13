@@ -57,26 +57,28 @@
 
   {#if includePreviousOcc}
     <div class="card-box">
-      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
-        {#if includeHeader && h.w}
-          <div class="patient-field" style="margin-top:0;display:flex;flex-direction:column;justify-content:flex-end;">
+      <div class="patient-field" style="margin-top:0;">
+        {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
+          <label>Check a patient's status:</label>
+        {/if}
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+          {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
+            <div style="flex:1 1 180px;min-width:180px;">
+              <WardPatientPicker value={quickLookupId} options={h.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
+              {#if quickLookupTag}
+                <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
+                  {quickLookupTag}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          {#if includeHeader && h.w}
             <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
               onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(h.w.key) + "&label=" + encodeURIComponent(h.w.label))}>
               {"\uD83D\uDCC1 Archive"}
             </button>
-          </div>
-        {/if}
-        {#if h.wardPatientOptions && h.wardPatientOptions.length > 0}
-          <div class="patient-field" style="min-width:220px;margin-top:0;">
-            <label>Check a patient's status:</label>
-            <WardPatientPicker value={quickLookupId} options={h.wardPatientOptions} onSelect={(id) => quickLookupId = id} />
-            {#if quickLookupTag}
-              <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
-                {quickLookupTag}
-              </div>
-            {/if}
-          </div>
-        {/if}
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
