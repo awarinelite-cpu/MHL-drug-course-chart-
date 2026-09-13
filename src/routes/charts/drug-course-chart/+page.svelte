@@ -10,7 +10,7 @@
   import { getDocSafe } from "$lib/helpers/firestoreOffline.js";
   import Topbar from "$lib/components/Topbar.svelte";
   import {
-    ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS, STATUS_LABELS, WARD_OPTIONS,
+    ROUTE_OPTIONS, FREQ_OPTIONS, ACTION_OPTIONS, REMARK_OPTIONS, STATUS_LABELS, WARD_OPTIONS,
     actionColor, defaultRow, dueLabelFor, withDrugCompletionChecked, computeRouteFromSno,
     parseBulkText, parseDoseSequence, administrationTimesFor, flaggedDrugRefs, flaggedDrugMessage,
     diffFields, autoDurationForFrequency, buildSnoSegments, buildSnoText, abbreviateReason,
@@ -896,7 +896,11 @@
                 <td class="col-dose"><input type="text" value={row.dose || "AP"} oninput={(e) => updateChartRow(i, { dose: e.target.value })} /></td>
                 <td class="col-route"><input type="text" value={row.route || ""} oninput={(e) => updateChartRow(i, { route: e.target.value })} /></td>
                 <td class="col-nurse"><input type="text" readonly value={row.nurse || ""} /></td>
-                <td class="col-remark"><input type="text" value={row.remark || ""} oninput={(e) => updateChartRow(i, { remark: e.target.value })} /></td>
+                <td class="col-remark">
+                  <select value={row.remark || ""} onchange={(e) => updateChartRow(i, { remark: e.target.value })}>
+                    {#each REMARK_OPTIONS as opt}<option value={opt}>{opt || "—"}</option>{/each}
+                  </select>
+                </td>
               </tr>
             {:else}
               {@const segs = buildSnoSegments(row.sno, row.skipped)}
