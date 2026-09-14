@@ -67,12 +67,6 @@
       </button>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;margin-bottom:12px;">
-      {#each hooks as h (h.w.key)}
-        <div class="patient-field" style="max-width:140px;">
-          <label for={"prev-occ-" + h.w.key}>{"Previous Occ (" + h.w.label + ")"}</label>
-          <input id={"prev-occ-" + h.w.key} type="number" inputmode="numeric" disabled={!h.editable} value={h.wardDoc.startOcc} onchange={(e) => h.updateStartOcc(e.target.value)} />
-        </div>
-      {/each}
       {#if quickLookupOptions.length > 0}
         <div class="patient-field" style="min-width:220px;">
           <label>Check a patient's status:</label>
