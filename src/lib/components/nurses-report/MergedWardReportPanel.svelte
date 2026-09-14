@@ -59,25 +59,27 @@
 
 {#if bothLoaded}
   <div class="card-box">
-    <div class="ward-select-row">
-      <h2 style="margin:0;">{group.label} \u2014 Shift Statistics</h2>
-      <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
-        onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(hA.w.key) + "&label=" + encodeURIComponent(group.label))}>
-        {"\uD83D\uDCC1 Archive"}
-      </button>
-    </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;margin-bottom:12px;">
+    <h2 style="margin:0;">{group.label} \u2014 Shift Statistics</h2>
+    <div class="patient-field" style="margin-top:12px;margin-bottom:12px;">
       {#if quickLookupOptions.length > 0}
-        <div class="patient-field" style="min-width:220px;">
-          <label>Check a patient's status:</label>
-          <WardPatientPicker value={quickLookupId} options={quickLookupOptions} onSelect={(id) => quickLookupId = id} />
-          {#if quickLookupTag}
-            <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
-              {quickLookupTag}{quickLookupRecord.location ? " \u2014 " + quickLookupRecord.location : ""}
-            </div>
-          {/if}
-        </div>
+        <label>Check a patient's status:</label>
       {/if}
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        {#if quickLookupOptions.length > 0}
+          <div style="flex:1 1 180px;min-width:180px;">
+            <WardPatientPicker value={quickLookupId} options={quickLookupOptions} onSelect={(id) => quickLookupId = id} />
+            {#if quickLookupTag}
+              <div style={"font-size:12px;margin-top:4px;font-weight:bold;color:" + (quickLookupRecord.dischargeStatus ? "#dc2626" : quickLookupRecord.admissionTag ? "#2563eb" : "#6b7280") + ";"}>
+                {quickLookupTag}{quickLookupRecord.location ? " \u2014 " + quickLookupRecord.location : ""}
+              </div>
+            {/if}
+          </div>
+        {/if}
+        <button class="btn btn-secondary" style="padding:6px 12px;" type="button"
+          onclick={() => goto("/nurses-report/archive-list?type=ward&ward=" + encodeURIComponent(hA.w.key) + "&label=" + encodeURIComponent(group.label))}>
+          {"\uD83D\uDCC1 Archive"}
+        </button>
+      </div>
     </div>
     <div class="table-wrap">
       <MergedShiftTable panels={hooks.map((h) => ({
