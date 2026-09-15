@@ -44,7 +44,7 @@
   // admissionTagBadge below) — the other two stay tied to their existing
   // write-up-linked clearing, since a rejected transfer has no equivalent
   // follow-up action to wait for.
-  const ADMISSION_TAG_BADGE_CLASS = { AE_TRANSFER: "badge-active", NEW_PATIENT: "badge-active", TRANSFER_REJECTED: "badge-transferred" };
+  const ADMISSION_TAG_BADGE_CLASS = { AE_TRANSFER: "badge-active", WARD_TRANSFER: "badge-active", NEW_PATIENT: "badge-active", TRANSFER_REJECTED: "badge-transferred" };
 
   const EMPTY_FORM = { name: "", emr: "", diagnosis: "", ward: "", pedBedType: "", age: "", hospNo: "", admissionDate: "", allergies: "", insurance: "" };
 
@@ -503,7 +503,11 @@
 {#snippet admissionTagBadge(patient)}
   {@const tag = activeAdmissionTag(patient)}
   {#if tag}
-    {@const label = tag === "TRANSFER_REJECTED" && patient.transferRejectedByWard ? `TRANSFER REJECTED by ${patient.transferRejectedByWard}` : (ADMISSION_TAG_LABEL[tag] || tag)}
+    {@const label = tag === "TRANSFER_REJECTED" && patient.transferRejectedByWard
+      ? `TRANSFER REJECTED by ${patient.transferRejectedByWard}`
+      : tag === "WARD_TRANSFER" && patient.transferFromWard
+        ? `TRANS IN from ${patient.transferFromWard}`
+        : (ADMISSION_TAG_LABEL[tag] || tag)}
     {@const dismissible = tag === "TRANSFER_REJECTED"}
     <br />
     <span
