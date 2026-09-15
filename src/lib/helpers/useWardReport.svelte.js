@@ -207,8 +207,9 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
       // opened, OR any later time it's opened while still untouched — seed
       // Previous Occ from the actual patient list rather than a stale
       // carried-forward number. See isWardDocUntouched.
-      if (!snap.exists() || isWardDocUntouched(next)) {
-        const patientWardInfo = patientWardAndBedTypeForReportKey(wardKey);
+      const patientWardInfo = patientWardAndBedTypeForReportKey(wardKey);
+      const wasUntouched = !snap.exists() || isWardDocUntouched(next);
+      if (wasUntouched) {
         let filledFromPatients = false;
         if (patientWardInfo) {
           try {
@@ -227,6 +228,38 @@ export function createWardReport(wardKey, profile, user, getIsAdmin) {
             if (prevSnap.exists() && typeof prevSnap.data().occ === "number") next = { ...next, startOcc: prevSnap.data().occ };
           } catch (e) { /* non-fatal — leave startOcc at 0, nurse can correct it */ }
         }
+      } else if (patientWardInfo) {
+        // The report already has shift movements typed into it today, so
+        // its running Occ (startOcc + every shift's ADM/DISC/etc.) is the
+        // real record of what a nurse reported and must stay intact. But
+        // that running total only ever moves when someone types a number
+        // in — if a patient's chart is instead deleted outright (a
+        // duplicate entry, a mistaken registration) with no matching "-1"
+        // typed anywhere, Occ silently drifts above the real patient
+        // count and stays wrong until a nurse notices and hand-fixes it.
+        // Reconcile on every open: compare the running total to the live
+        // patient count and, if they've drifted apart, absorb the
+        // difference into startOcc rather than occ/vac directly, so every
+        // shift's own recorded numbers are preserved and only the
+        // baseline they build on is corrected.
+        try {
+          const patientsSnap = await getDocs(collection(db, "patients"));
+          const patients = [];
+          patientsSnap.forEach((d) => patients.push(d.data()));
+          const headcount = wardHeadcount(patients, patientWardInfo.wardLabel, patientWardInfo.bedType);
+          const runningOcc = computeCensus(next).occ;
+          if (headcount !== runningOcc) {
+            const correctedStartOcc = (typeof next.startOcc === "number" ? next.startOcc : 0) + (headcount - runningOcc);
+            next = { ...next, startOcc: correctedStartOcc };
+            // Persist right away — not just for this viewer's session — so
+            // any other screen reading this ward's stored report (e.g. the
+            // ward home-page summary) also sees the corrected number
+            // instead of the stale one until someone happens to save.
+            if (snap.exists()) {
+              setDoc(doc(db, "nurseReports_mhl", dateId, "wards", wardKey), { startOcc: correctedStartOcc, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+            }
+          }
+        } catch (e) { /* best-effort — leave the running total as-is */ }
       }
 
       if (cancelled) return;
